@@ -4,13 +4,13 @@ node_modules/
 *.tgz
 .pnpm-store/
 
-# Plug'n'Play здесь не используется (nodeLinker: node-modules), но если кто-то
-# переключит линкер, эти файлы не должны попасть в репозиторий.
+# Plug'n'Play is not used here (nodeLinker: node-modules), but if anyone switches the
+# linker, these files must not end up in the repository.
 .pnp.*
 
-# Из .yarn/ игнорируем всё, кроме того, что Yarn сам просит коммитить.
-# Кэш вынесен в глобальный (enableGlobalCache), так что .yarn/ здесь почти пуст —
-# остаётся install-state.gz, который как раз не нужен в истории.
+# From .yarn/ everything is ignored except what Yarn itself asks to be committed.
+# The cache is global (enableGlobalCache), so .yarn/ is nearly empty here — what remains
+# is install-state.gz, which is exactly what history does not need.
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -18,11 +18,11 @@ node_modules/
 !.yarn/sdks
 !.yarn/versions
 
-# .yarnrc.yml и yarn.lock КОММИТИМ. Первый держит nodeLinker, без которого
-# tsx не найдёт модули; второй фиксирует версии SDK, а протокольные расхождения
-# между версиями здесь — половина смысла репозитория.
+# .yarnrc.yml and yarn.lock ARE committed. The first holds nodeLinker, without which tsx
+# will not find the modules; the second pins the SDK versions, and protocol differences
+# between those versions are half the point of this repository.
 
-# --- Логи и отладка ---
+# --- Logs and debugging ---
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -31,7 +31,7 @@ pnpm-debug.log*
 .tap/
 tap-*.txt
 
-# --- Окружение и секреты ---
+# --- Environment and secrets ---
 .env
 .env.*
 !.env.example
@@ -39,7 +39,7 @@ tap-*.txt
 *.key
 .netrc
 
-# --- Кэши инструментов ---
+# --- Tool caches ---
 .cache/
 .tsbuildinfo
 *.tsbuildinfo
@@ -48,34 +48,40 @@ tap-*.txt
 coverage/
 .nyc_output/
 
-# --- Сборка (здесь её нет — tsx выполняет TypeScript напрямую, но на будущее) ---
+# --- Build output (there is none — tsx runs TypeScript directly — but just in case) ---
 dist/
 build/
 out/
 
-# --- Локальные артефакты агентов ---
+# --- Local agent artifacts ---
 .claude/settings.local.json
 .worktrees/
 
-# Рабочие каталоги, которые ACP-мост заводит на каждый разговор.
-# Лежат в репозитории, а не в /tmp, сознательно: песочница Codex считает /tmp и $TMPDIR
-# писабельными и не спрашивает разрешения на запись туда.
+# The working directories the ACP bridge creates per conversation. They live in the
+# repository rather than in /tmp deliberately: the Codex sandbox treats /tmp and $TMPDIR
+# as writable and asks no permission before writing there.
 .acp-sandboxes/
 
-# Ручная песочница для проб: сюда направляют ACP_CWD, когда хотят смотреть за агентом.
+# The hand-made sandbox for experiments: ACP_CWD is pointed here when you want to watch
+# the agent work.
 workspace/
 
-# Логи моста: calls.jsonl и work.jsonl со своими ротированными копиями.
+# Bridge logs: calls.jsonl and work.jsonl with their rotated copies, plus the service
+# units' stdout under logs/service/.
 logs/
 
-# Токен MCP-моста: генерируется при запуске, режим 600. Секрет, не в репозиторий.
+# The MCP bridge's token: minted at startup, mode 600. A secret, not for the repository.
 .mcp-token
 
-# Чужие исходники, стянутые для чтения при проектировании моста A2A → MCP.
-# Это референс, а не зависимость: ничего отсюда не собирается и не импортируется.
+# The local client config for that bridge: the address of a particular agent and the same
+# bearer token in the clear. A secret and a machine-specific path — not for the repository.
+.mcp.json
+
+# Third-party sources pulled in to read while designing the A2A → MCP bridge.
+# Reference material, not a dependency: nothing here is built or imported.
 ref/
 
-# --- macOS / редакторы ---
+# --- macOS / editors ---
 .DS_Store
 .AppleDouble
 .LSOverride

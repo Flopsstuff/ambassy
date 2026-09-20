@@ -21,6 +21,7 @@ yarn client        # SDK client: two-turn conversation with streaming
 yarn raw           # the same protocol over bare curl, no SDK
 yarn tap           # wire-tap proxy :41242 → :41241
 yarn mcp           # MCP endpoint on :41243 fronting the A2A agent, for a calling agent
+yarn service       # install and drive the whole thing as a background service
 ```
 
 All three servers listen on the same port and serve the same protocol, so `client`, `raw` and
@@ -248,6 +249,45 @@ Three decisions worth knowing before changing anything there:
   one generic tool. Client-directed skill selection is being specified for A2A v1.1.
 
 Full write-up: [docs/mcp-bridge.md](docs/mcp-bridge.md).
+
+## Running as a service
+
+`bin/ambassyctl` installs the same processes as background services — LaunchAgents on macOS,
+`systemd --user` units on Linux — and drives both with one command:
+
+```bash
+yarn service install --with-mcp          # a2a + mcp; without the flag, the agent alone
+yarn service install --backend codex     # claude (default), codex, or revisor for the stub
+yarn service status | start | stop | restart | logs | token | uninstall
+```
+
+Two units (`a2a`, `mcp`) rather than one, for the reason the MCP section gives: the bridge is an
+A2A *client*, so it has to be installable alone against a remote `A2A_URL`, and a crash in either
+must not take the other down. Ordering between them is never enforced — the bridge builds its A2A
+client lazily, so coming up first costs nothing.
+
+A unit file carries only what selects the process: the entry point, absolute paths to `node` and
+`tsx` (a service manager supplies no PATH, and under nvm the interpreter is nowhere a default one
+would look — and the path comes from `process.execPath`, because under `yarn service …` Yarn's
+own temporary `node` wrapper is what `command -v` finds, and it is deleted when the command
+ends), and where stdout goes. Everything else stays in `.env` and takes effect on
+`restart` — which works because the unit's own variables win, per the `loadEnvFile` rule above.
+
+Three consequences worth knowing before changing anything there:
+
+- **`MCP_TOKEN` is pinned at install.** Minted per start, it changes on every restart and
+  invalidates the client config holding the old one — a nuisance by hand, an outage for a service.
+- **`A2A_URL` is pinned too** when both units go in together, because its default names port
+  41241 and a repository that moved `PORT` would leave the bridge pointing at nothing.
+- **`src/agent.ts` reads no `.env`,** so `--backend revisor` copies `PORT`, `HOST` and
+  `PUBLIC_URL` into the unit. The two bridges read the file themselves.
+
+`status` prints what the service manager believes next to what the network answers: `card ok` is
+the Agent Card responding, `guard ok` is the MCP endpoint refusing an unauthenticated probe with
+401 — which proves the listener and the bearer guard in one call. Service stdout lands in
+`logs/service/*.log`, which do not rotate; the structured logs still do.
+
+Full write-up: [docs/service.md](docs/service.md).
 
 ## Protocol invariants
 

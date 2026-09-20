@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Rendered by bin/ambassyctl; @PLACEHOLDERS@ are substituted at install time.
+  A LaunchAgent, not a LaunchDaemon, and that is not a detail: the coding agent behind
+  the bridge reads the credentials in the operator's home directory, so it has to run
+  as that user in their GUI session.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+
+  <!-- node + tsx by absolute path: launchd hands a process almost no PATH, and under
+       nvm the interpreter is nowhere a default PATH would find it. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>@NODE@</string>
+    <string>@TSX@</string>
+    <string>@ENTRY@</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>@ROOT@</string>
+
+  <!-- Only what selects the process. Everything else is read from .env at startup,
+       and a variable set here wins: process.loadEnvFile() leaves the environment alone. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@PATH@</string>
+@ENV@
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart a crash, but not a clean exit — `ambassyctl stop` ends with status 0,
+       and KeepAlive=true would bring the process straight back up. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>@OUT@</string>
+  <key>StandardErrorPath</key>
+  <string>@ERR@</string>
+</dict>
+</plist>

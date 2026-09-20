@@ -28,12 +28,16 @@ behaviour is what is written down, and the disagreement is called out.
 | [permissions.md](permissions.md) | Who decides what the coding agent may do, and why not the caller |
 | [configuration.md](configuration.md) | Commands, environment variables, files |
 | [logging.md](logging.md) | The two log channels, their vocabulary, and rotation |
+| [service.md](service.md) | Installing the agent and the bridge as background services |
 | [troubleshooting.md](troubleshooting.md) | Errors you will actually hit, and what they mean |
 | [repository-audit.md](repository-audit.md) | Repository audit, confirmed defects, priorities, and acceptance criteria for fixes |
 
 ## Source layout
 
 ```
+bin/
+  ambassyctl        Installs and drives both processes as services (launchd / systemd)
+service/            The unit templates it renders
 src/
   agent.ts          A2A server with a placeholder executor (the "Revisor")
   client.ts         A2A client: discovery, streaming, resuming a task

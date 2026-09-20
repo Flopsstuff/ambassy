@@ -11,7 +11,8 @@
     "client": "tsx src/client.ts",
     "tap": "tsx src/proxy.ts",
     "raw": "./src/raw.sh",
-    "mcp": "tsx src/mcp/server.ts"
+    "mcp": "tsx src/mcp/server.ts",
+    "service": "./bin/ambassyctl"
   },
   "keywords": [],
   "author": "",

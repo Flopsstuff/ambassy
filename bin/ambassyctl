@@ -1,0 +1,638 @@
+#!/usr/bin/env bash
+#
+# ambassyctl — install and drive Ambassy as a background service.
+#
+# Two units, one command. `a2a` is the agent itself (the ACP bridge, or the stub
+# executor); `mcp` is the MCP endpoint that fronts it. They are separate services on
+# purpose: the MCP bridge is an A2A *client* that reaches the agent over the network,
+# so it can run alone against a remote one, and a crash in either must not take the
+# other down. What holds them together is this script, not a supervisor process.
+#
+# Configuration stays in .env, which both processes read at startup. A unit file carries
+# only what selects the process — which entry point, where node lives, where to log —
+# and a variable set in a unit wins over .env, because process.loadEnvFile() does not
+# overwrite what is already in the environment.
+#
+# Usage:
+#   ambassyctl install [--with-mcp] [--backend claude|codex|revisor] [--mcp-host ADDR] [--no-start] [a2a|mcp ...]
+#   ambassyctl uninstall [a2a|mcp]
+#   ambassyctl start|stop|restart [a2a|mcp]
+#   ambassyctl status
+#   ambassyctl logs [a2a|mcp] [-f]
+#   ambassyctl token
+
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$ROOT/.env"
+TOKEN_FILE="$ROOT/.mcp-token"
+LOG_DIR="${AMBASSY_SERVICE_LOG_DIR:-$ROOT/logs/service}"
+TSX_BIN="$ROOT/node_modules/.bin/tsx"
+
+# Resolved through the interpreter, never through `command -v node`. Under the documented
+# `yarn service …` entry point Yarn 4 puts a temporary wrapper first on PATH and deletes
+# it when the command ends, so PATH names a binary that is gone moments later — both in
+# ProgramArguments and in the unit's own PATH, where the ACP adapters go looking for the
+# `#!/usr/bin/env node` in their shebang. The wrapper reports the real one in execPath.
+NODE_BIN="${AMBASSY_NODE:-$(node -p 'process.execPath' 2>/dev/null || true)}"
+
+say()  { printf '%s\n' "$*"; }
+info() { printf '  %s\n' "$*"; }
+warn() { printf '  ! %s\n' "$*" >&2; }
+die()  { printf '  ⨯ %s\n' "$*" >&2; exit 1; }
+
+# --- platform ---------------------------------------------------------------------
+#
+# launchd and systemd differ in nearly every verb, so the difference is absorbed here
+# and nowhere else: every command below speaks in units named `a2a` and `mcp`.
+
+case "$(uname -s)" in
+  Darwin) PLATFORM=launchd ;;
+  Linux)  PLATFORM=systemd ;;
+  *)      die "unsupported platform $(uname -s) — this knows launchd (macOS) and systemd (Linux)" ;;
+esac
+
+if [ "$PLATFORM" = systemd ] && ! command -v systemctl >/dev/null 2>&1; then
+  die "systemctl not found — a systemd --user session is what this installs into"
+fi
+
+DOMAIN="gui/$(id -u)"
+
+unit_label() {
+  case "$PLATFORM" in
+    launchd) printf 'local.ambassy.%s' "$1" ;;
+    systemd) printf 'ambassy-%s.service' "$1" ;;
+  esac
+}
+
+unit_file() {
+  case "$PLATFORM" in
+    launchd) printf '%s/Library/LaunchAgents/%s.plist' "$HOME" "$(unit_label "$1")" ;;
+    systemd) printf '%s/systemd/user/%s' "${XDG_CONFIG_HOME:-$HOME/.config}" "$(unit_label "$1")" ;;
+  esac
+}
+
+unit_installed() { [ -f "$(unit_file "$1")" ]; }
+
+# The pid of a running unit, or nothing at all.
+unit_pid() {
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd)
+      launchctl print "$DOMAIN/$label" 2>/dev/null |
+        awk -F '= ' '/^[[:space:]]*pid = /{ gsub(/[^0-9]/, "", $2); print $2; exit }'
+      ;;
+    systemd)
+      local pid; pid="$(systemctl --user show -p MainPID --value "$label" 2>/dev/null || true)"
+      [ "${pid:-0}" != 0 ] && printf '%s' "$pid"
+      ;;
+  esac
+  return 0
+}
+
+installed_units() {
+  local u
+  for u in a2a mcp; do unit_installed "$u" && printf '%s\n' "$u"; done
+  return 0
+}
+
+# --- .env -------------------------------------------------------------------------
+
+# .env is read by Node, not by grep, and the difference is not pedantry: a
+# grep-and-cut parser keeps the comment in `MCP_TOKEN=secret # pinned` (the server
+# does not, so every client built from it gets a 401) and misses `PORT = 41251`
+# entirely (the server does not, so the CLI probes one port while the service
+# listens on another). util.parseEnv is the same parser process.loadEnvFile uses,
+# which makes agreement a fact rather than a resemblance.
+#
+# One call per command, cached: values are printed as KEY=value, and a newline
+# inside a value becomes a space, since nothing here is multi-line.
+ENV_LOADED=0
+ENV_KV=""
+
+env_load() {
+  [ "$ENV_LOADED" = 1 ] && return 0
+  ENV_LOADED=1
+  ENV_KV=""
+  [ -f "$ENV_FILE" ] || return 0
+  [ -x "$NODE_BIN" ] || die "node not found — set AMBASSY_NODE to the interpreter to use"
+  ENV_KV="$("$NODE_BIN" -e '
+const { parseEnv } = require("node:util");
+const { readFileSync } = require("node:fs");
+const env = parseEnv(readFileSync(process.argv[1], "utf8"));
+for (const [key, value] of Object.entries(env)) {
+  process.stdout.write(`${key}=${String(value).replace(/\r?\n/g, " ")}\n`);
+}
+' "$ENV_FILE" 2>/dev/null || true)"
+  return 0
+}
+
+env_get() { # KEY [DEFAULT]
+  env_load
+  local key="$1" def="${2-}" line value
+  line="$(printf '%s\n' "$ENV_KV" | grep -E "^${key}=" | tail -n 1 || true)"
+  value="${line#*=}"
+  printf '%s' "${value:-$def}"
+}
+
+env_set() { # KEY VALUE [COMMENT shown when the key is added]
+  local key="$1" value="$2" comment="${3-}" tmp
+  touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ambassy-env.XXXXXX")"
+  if grep -qE "^[[:space:]]*${key}=" "$ENV_FILE"; then
+    awk -v k="$key" -v v="$value" '
+      $0 ~ "^[ \t]*" k "=" && !done { print k "=" v; done = 1; next }
+      { print }
+    ' "$ENV_FILE" > "$tmp"
+  else
+    cp "$ENV_FILE" "$tmp"
+    { printf '\n'; [ -n "$comment" ] && printf '# %s\n' "$comment"; printf '%s=%s\n' "$key" "$value"; } >> "$tmp"
+  fi
+  cat "$tmp" > "$ENV_FILE"   # rewrite in place, so the file keeps its mode and inode
+  rm -f "$tmp"
+  ENV_LOADED=0               # the cache above is now stale
+}
+
+a2a_port() { env_get PORT 41241; }
+a2a_host() { env_get HOST 127.0.0.1; }
+mcp_port() { env_get MCP_PORT 41243; }
+mcp_host() { env_get MCP_HOST 127.0.0.1; }
+
+# The address a client on another machine would use. MCP_HOST says how the socket is
+# bound, not how it is reached, so a wildcard bind has to be resolved to a real address.
+lan_address() {
+  local host; host="$(mcp_host)"
+  case "$host" in
+    0.0.0.0|::|'')
+      if command -v ipconfig >/dev/null 2>&1; then
+        ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || printf '127.0.0.1'
+      elif command -v hostname >/dev/null 2>&1; then
+        hostname -I 2>/dev/null | awk '{ print ($1 == "" ? "127.0.0.1" : $1) }'
+      else
+        printf '127.0.0.1'
+      fi
+      ;;
+    *) printf '%s' "$host" ;;
+  esac
+}
+
+# The MCP bridge prints its bearer token to stdout at startup, so mcp.out.log holds a
+# credential. Both service managers create these files under their own umask — 0644 on a
+# default system — and append to an existing file without touching its mode, so the only
+# moment that decides the permissions is before the first start.
+prepare_log_dir() {
+  mkdir -p "$LOG_DIR"
+  chmod 700 "$LOG_DIR"
+  local unit f
+  for unit in a2a mcp; do
+    for f in "$LOG_DIR/$unit.out.log" "$LOG_DIR/$unit.err.log"; do
+      [ -f "$f" ] || : > "$f"
+      chmod 600 "$f"
+    done
+  done
+}
+
+# --- rendering --------------------------------------------------------------------
+
+entry_for_backend() { # claude|codex|revisor
+  case "$1" in
+    claude|codex) printf '%s/src/acp/agent.ts' "$ROOT" ;;
+    revisor)      printf '%s/src/agent.ts' "$ROOT" ;;
+    *)            die "unknown backend \"$1\" — claude, codex or revisor" ;;
+  esac
+}
+
+unit_env_file() { # PATH_TO_TMPFILE KEY=VALUE...
+  local out="$1"; shift
+  : > "$out"
+  local kv key value
+  for kv in "$@"; do
+    key="${kv%%=*}"; value="${kv#*=}"
+    case "$PLATFORM" in
+      launchd) printf '    <key>%s</key>\n    <string>%s</string>\n' "$key" "$value" >> "$out" ;;
+      systemd) printf 'Environment="%s=%s"\n' "$key" "$value" >> "$out" ;;
+    esac
+  done
+}
+
+render_unit() { # UNIT ENTRY ENVFILE
+  local unit="$1" entry="$2" envfile="$3"
+  local tmpl dest label node_dir unit_path
+  case "$PLATFORM" in
+    launchd) tmpl="$ROOT/service/launchd/$unit.plist" ;;
+    systemd) tmpl="$ROOT/service/systemd/$unit.service" ;;
+  esac
+  [ -f "$tmpl" ] || die "missing unit template $tmpl"
+
+  dest="$(unit_file "$unit")"
+  label="$(unit_label "$unit")"
+  node_dir="$(dirname "$NODE_BIN")"
+  # Homebrew and /usr/local ahead of the system path: the coding agent shells out to
+  # git, rg and whatever else the task needs, and a service manager supplies none of it.
+  unit_path="$node_dir:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+  mkdir -p "$(dirname "$dest")" "$LOG_DIR"
+  sed \
+    -e "s|@LABEL@|$label|g" \
+    -e "s|@ROOT@|$ROOT|g" \
+    -e "s|@NODE@|$NODE_BIN|g" \
+    -e "s|@TSX@|$TSX_BIN|g" \
+    -e "s|@ENTRY@|$entry|g" \
+    -e "s|@PATH@|$unit_path|g" \
+    -e "s|@OUT@|$LOG_DIR/$unit.out.log|g" \
+    -e "s|@ERR@|$LOG_DIR/$unit.err.log|g" \
+    -e "/@ENV@/r $envfile" \
+    -e "/@ENV@/d" \
+    "$tmpl" > "$dest"
+  chmod 644 "$dest"
+  printf '%s' "$dest"
+}
+
+# --- service verbs ----------------------------------------------------------------
+
+# launchd unloads asynchronously: bootstrap called straight after bootout fails with
+# "Input/output error 5", because the old job is still on its way out. Wait for it.
+launchd_wait_gone() { # LABEL
+  local label="$1" i=0
+  while launchctl print "$DOMAIN/$label" >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -gt 100 ] && return 1
+    sleep 0.1
+  done
+  return 0
+}
+
+svc_load() { # UNIT — register and start
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd)
+      launchctl bootout "$DOMAIN/$label" >/dev/null 2>&1 || true
+      launchd_wait_gone "$label" || warn "$label is still loaded; bootstrapping anyway"
+      launchctl bootstrap "$DOMAIN" "$(unit_file "$1")"
+      ;;
+    systemd)
+      systemctl --user daemon-reload
+      systemctl --user enable "$label"
+      # `enable --now` starts an inactive unit and leaves a running one alone, so a
+      # reinstall onto a live service would report success while the old process — old
+      # backend, old paths — kept answering. Restart is what install actually means.
+      systemctl --user restart "$label"
+      ;;
+  esac
+}
+
+svc_enable_only() { # UNIT — register for the next login without starting now
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd) : ;;  # the plist in ~/Library/LaunchAgents is the registration
+    systemd) systemctl --user daemon-reload; systemctl --user enable "$label" ;;
+  esac
+}
+
+svc_start() {
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd)
+      if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+        launchctl kickstart "$DOMAIN/$label"
+      else
+        launchctl bootstrap "$DOMAIN" "$(unit_file "$1")"
+      fi
+      ;;
+    systemd) systemctl --user start "$label" ;;
+  esac
+}
+
+# On launchd this unloads the job outright rather than signalling it: a `kill` leaves the
+# job loaded, and `status` then has to distinguish loaded-but-dead from stopped, which is
+# a distinction no one wants from a stop command.
+svc_stop() {
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd)
+      launchctl bootout "$DOMAIN/$label" >/dev/null 2>&1 || true
+      launchd_wait_gone "$label" >/dev/null || true
+      ;;
+    systemd) systemctl --user stop "$label" ;;
+  esac
+}
+
+svc_restart() {
+  local label; label="$(unit_label "$1")"
+  case "$PLATFORM" in
+    launchd)
+      if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+        launchctl kickstart -k "$DOMAIN/$label"
+      else
+        launchctl bootstrap "$DOMAIN" "$(unit_file "$1")"
+      fi
+      ;;
+    systemd) systemctl --user restart "$label" ;;
+  esac
+}
+
+svc_remove() {
+  local label dest; label="$(unit_label "$1")"; dest="$(unit_file "$1")"
+  case "$PLATFORM" in
+    launchd) launchctl bootout "$DOMAIN/$label" >/dev/null 2>&1 || true ;;
+    systemd)
+      systemctl --user disable --now "$label" >/dev/null 2>&1 || true
+      ;;
+  esac
+  rm -f "$dest"
+  [ "$PLATFORM" = systemd ] && systemctl --user daemon-reload || true
+}
+
+# --- health probes ----------------------------------------------------------------
+#
+# What the service manager knows is whether a process exists; these say whether it
+# answers. Both are cheap enough to run on every `status`.
+
+probe_a2a() {
+  command -v curl >/dev/null 2>&1 || { printf '?'; return; }
+  local host code
+  host="$(a2a_host)"; [ "$host" = 0.0.0.0 ] && host=127.0.0.1
+  code="$(curl -s -o /dev/null -m 2 -w '%{http_code}' \
+    "http://$host:$(a2a_port)/.well-known/agent-card.json" 2>/dev/null || true)"
+  [ "$code" = 200 ] && printf 'card ok' || printf '—'
+}
+
+probe_mcp() {
+  command -v curl >/dev/null 2>&1 || { printf '?'; return; }
+  local host code
+  host="$(mcp_host)"; [ "$host" = 0.0.0.0 ] && host=127.0.0.1
+  # No token on purpose: a 401 is the endpoint answering, and it proves the guard runs.
+  code="$(curl -s -o /dev/null -m 2 -w '%{http_code}' -X POST "http://$host:$(mcp_port)/mcp" 2>/dev/null || true)"
+  case "$code" in
+    401) printf 'guard ok' ;;
+    000|'') printf '—' ;;
+    *) printf 'http %s' "$code" ;;
+  esac
+}
+
+# A started unit is not a listening one: node + tsx take a second or two to come up, and
+# a status printed before then reads as a failure. Poll the same probe `status` uses.
+wait_ready() { # UNIT
+  local unit="$1" i=0 out=""
+  while [ "$i" -lt 20 ]; do
+    case "$unit" in
+      a2a) out="$(probe_a2a)" ;;
+      mcp) out="$(probe_mcp)" ;;
+    esac
+    case "$out" in
+      'card ok'|'guard ok'|'?') printf '%s' "$out"; return 0 ;;
+    esac
+    i=$((i + 1)); sleep 0.5
+  done
+  printf '%s' "$out"; return 1
+}
+
+report_started() { # UNIT VERB
+  local ready
+  if ready="$(wait_ready "$1")"; then
+    info "$2 $1 ($ready)"
+  else
+    warn "$2 $1, but it is not answering yet — check: $0 logs $1"
+  fi
+}
+
+# --- commands ---------------------------------------------------------------------
+
+require_units() { # at least one installed unit, or a hint
+  local units; units="$(installed_units)"
+  [ -n "$units" ] || die "nothing installed — run: $0 install --with-mcp"
+  printf '%s' "$units"
+}
+
+resolve_targets() { # [UNIT] → the units a verb applies to
+  if [ $# -gt 0 ] && [ -n "$1" ]; then
+    case "$1" in
+      a2a|mcp) unit_installed "$1" || die "$1 is not installed"; printf '%s' "$1" ;;
+      *) die "unknown unit \"$1\" — a2a or mcp" ;;
+    esac
+  else
+    require_units
+  fi
+}
+
+cmd_install() {
+  local units=() backend="" with_mcp=0 start=1 host_override=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --with-mcp)  with_mcp=1 ;;
+      --backend)   backend="${2:-}"; shift ;;
+      --backend=*) backend="${1#*=}" ;;
+      --mcp-host)  host_override="${2:-}"; shift ;;
+      --mcp-host=*) host_override="${1#*=}" ;;
+      --no-start)  start=0 ;;
+      a2a|mcp)     units+=("$1") ;;
+      -h|--help)   usage; exit 0 ;;
+      *)           die "unknown option \"$1\"" ;;
+    esac
+    shift
+  done
+  if [ ${#units[@]} -eq 0 ]; then
+    units=(a2a)
+    [ "$with_mcp" = 1 ] && units+=(mcp)
+  fi
+
+  [ -x "$NODE_BIN" ] || die "node not found — set AMBASSY_NODE to the interpreter to use"
+  [ -x "$TSX_BIN" ] || die "missing $TSX_BIN — run: yarn install"
+
+  if [ ! -f "$ENV_FILE" ]; then
+    cp "$ROOT/.env.example" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    info "created .env from .env.example"
+  fi
+
+  prepare_log_dir
+
+  say "⚙ Installing Ambassy ($PLATFORM)"
+
+  local unit entry envtmp dest
+  envtmp="$(mktemp "${TMPDIR:-/tmp}/ambassy-unit-env.XXXXXX")"
+  trap 'rm -f "$envtmp"' EXIT
+
+  for unit in "${units[@]}"; do
+    case "$unit" in
+      a2a)
+        [ -n "$backend" ] || backend="$(env_get ACP_AGENT claude)"
+        entry="$(entry_for_backend "$backend")"
+        if [ "$backend" = revisor ]; then
+          # The stub executor is the one entry point that does not read .env, so what it
+          # binds to has to travel in the unit. The two bridges read the file themselves.
+          local pub; pub="$(env_get PUBLIC_URL "")"
+          if [ -n "$pub" ]; then
+            unit_env_file "$envtmp" "PORT=$(a2a_port)" "HOST=$(a2a_host)" "PUBLIC_URL=$pub"
+          else
+            unit_env_file "$envtmp" "PORT=$(a2a_port)" "HOST=$(a2a_host)"
+          fi
+        else
+          env_set ACP_AGENT "$backend" "Which coding agent the ACP bridge starts. Set by bin/ambassyctl."
+          unit_env_file "$envtmp"
+        fi
+        ;;
+      mcp)
+        # When both units are installed here, the bridge's upstream is the agent next to
+        # it — but A2A_URL defaults to port 41241, so moving PORT in .env would quietly
+        # point the bridge at nothing. Pin it, unless it is already set (a remote agent).
+        if printf '%s\n' "${units[@]}" | grep -qx a2a && [ -z "$(env_get A2A_URL "")" ]; then
+          local a2a_addr; a2a_addr="$(a2a_host)"
+          [ "$a2a_addr" = 0.0.0.0 ] && a2a_addr=127.0.0.1
+          env_set A2A_URL "http://$a2a_addr:$(a2a_port)/" "The A2A agent the MCP bridge fronts. Set by bin/ambassyctl."
+          info "pinned A2A_URL to http://$a2a_addr:$(a2a_port)/"
+        fi
+
+        local token
+        token="$(env_get MCP_TOKEN "")"
+        if [ -z "$token" ]; then
+          # A minted token changes on every restart, which breaks whatever client config
+          # holds the old one — a service has to pin it.
+          token="$("$NODE_BIN" -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")"
+          env_set MCP_TOKEN "$token" "Bearer token for the MCP endpoint, pinned so restarts keep it. Secret."
+          info "minted MCP_TOKEN and pinned it in .env"
+        fi
+        printf '%s\n' "$token" > "$TOKEN_FILE"; chmod 600 "$TOKEN_FILE"
+        [ -n "$host_override" ] && env_set MCP_HOST "$host_override"
+        entry="$ROOT/src/mcp/server.ts"
+        unit_env_file "$envtmp"
+        ;;
+    esac
+
+    dest="$(render_unit "$unit" "$entry" "$envtmp")"
+    if [ "$start" = 1 ]; then svc_load "$unit"; else svc_enable_only "$unit"; fi
+    info "$unit → $(unit_label "$unit")"
+    info "     $dest"
+    [ "$start" = 1 ] && report_started "$unit" started || true
+  done
+  rm -f "$envtmp"; trap - EXIT
+
+  if [ "$PLATFORM" = systemd ] && command -v loginctl >/dev/null 2>&1; then
+    if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || echo no)" != yes ]; then
+      warn "user services stop at logout until you run: loginctl enable-linger $USER"
+    fi
+  fi
+
+  for unit in "${units[@]}"; do
+    if [ "$unit" = mcp ]; then
+      local host; host="$(mcp_host)"
+      case "$host" in
+        127.0.0.1|localhost|::1) ;;
+        *) [ -n "$(env_get MCP_ALLOWED_HOSTS "")" ] ||
+             warn "MCP_HOST=$host is not loopback and MCP_ALLOWED_HOSTS is empty — no DNS-rebinding protection" ;;
+      esac
+    fi
+  done
+
+  say
+  [ "$start" = 1 ] && say "  Started. Check it with: $0 status" || say "  Installed, not started. Start it with: $0 start"
+  if printf '%s\n' "${units[@]}" | grep -qx mcp; then
+    say
+    cmd_token
+  fi
+}
+
+cmd_uninstall() {
+  local targets unit
+  targets="$(resolve_targets "${1:-}")"
+  for unit in $targets; do
+    svc_remove "$unit"
+    info "removed $(unit_label "$unit")"
+  done
+}
+
+# `die` inside $( ) ends the subshell and nothing else, so a failed `resolve_targets` has
+# to reach the script through an assignment, where set -e sees it. Straight into a `for`
+# it would be swallowed and the verb would quietly iterate over nothing.
+cmd_start()   { local t u; t="$(resolve_targets "${1:-}")"; for u in $t; do svc_start "$u";   report_started "$u" started;   done; }
+cmd_stop()    { local t u; t="$(resolve_targets "${1:-}")"; for u in $t; do svc_stop "$u";    info "stopped $u"; done; }
+cmd_restart() { local t u; t="$(resolve_targets "${1:-}")"; for u in $t; do svc_restart "$u"; report_started "$u" restarted; done; }
+
+cmd_status() {
+  say "⚙ Ambassy service ($PLATFORM, $([ "$PLATFORM" = launchd ] && printf '%s' "$DOMAIN" || printf 'user session'))"
+  say
+  local unit pid state probe addr
+  for unit in a2a mcp; do
+    if ! unit_installed "$unit"; then
+      printf '  %-4s  %-13s\n' "$unit" "not installed"
+      continue
+    fi
+    pid="$(unit_pid "$unit")"
+    [ -n "$pid" ] && state="running" || state="stopped"
+    case "$unit" in
+      a2a) addr="$(a2a_host):$(a2a_port)"; probe="$([ -n "$pid" ] && probe_a2a || printf '—')" ;;
+      mcp) addr="$(mcp_host):$(mcp_port)"; probe="$([ -n "$pid" ] && probe_mcp || printf '—')" ;;
+    esac
+    printf '  %-4s  %-13s  %-14s  %-21s  %s\n' \
+      "$unit" "installed" "$state${pid:+ $pid}" "$addr" "$probe"
+  done
+  say
+  info "logs: $LOG_DIR"
+}
+
+cmd_logs() {
+  local follow=0 unit="" arg
+  for arg in "$@"; do
+    case "$arg" in
+      -f|--follow) follow=1 ;;
+      a2a|mcp)     unit="$arg" ;;
+      *)           die "unknown argument \"$arg\"" ;;
+    esac
+  done
+  local files=() targets u
+  targets="$(resolve_targets "$unit")"
+  for u in $targets; do
+    files+=("$LOG_DIR/$u.out.log" "$LOG_DIR/$u.err.log")
+  done
+  local existing=() f
+  for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
+  [ ${#existing[@]} -gt 0 ] || die "no service logs yet under $LOG_DIR"
+  if [ "$follow" = 1 ]; then tail -n 50 -f "${existing[@]}"; else tail -n 100 "${existing[@]}"; fi
+}
+
+cmd_token() {
+  local token host port
+  token="$(env_get MCP_TOKEN "")"
+  if [ -z "$token" ] && [ -f "$TOKEN_FILE" ]; then token="$(cat "$TOKEN_FILE")"; fi
+  [ -n "$token" ] || die "no MCP token yet — run: $0 install --with-mcp"
+  host="$(lan_address)"; port="$(mcp_port)"
+  say "  MCP endpoint: http://$host:$port/mcp"
+  say "  Token:        $token"
+  say
+  say "  claude mcp add --transport http ambassy http://$host:$port/mcp --header \"Authorization: Bearer $token\""
+  say
+  say "  .mcp.json:"
+  cat <<JSON
+  {
+    "mcpServers": {
+      "ambassy": {
+        "type": "http",
+        "url": "http://$host:$port/mcp",
+        "headers": { "Authorization": "Bearer $token" }
+      }
+    }
+  }
+JSON
+}
+
+usage() {
+  # The header comment above is the help text; print it until the first line of code.
+  awk 'NR > 2 && /^#/ { sub(/^# ?/, ""); print; next } NR > 2 { exit }' "${BASH_SOURCE[0]}"
+}
+
+main() {
+  local cmd="${1:-}"; [ $# -gt 0 ] && shift || true
+  case "$cmd" in
+    install)   cmd_install "$@" ;;
+    uninstall) cmd_uninstall "${1:-}" ;;
+    start)     cmd_start "${1:-}" ;;
+    stop)      cmd_stop "${1:-}" ;;
+    restart)   cmd_restart "${1:-}" ;;
+    status)    cmd_status ;;
+    logs)      cmd_logs "$@" ;;
+    token)     cmd_token ;;
+    ''|-h|--help|help) usage ;;
+    *)         die "unknown command \"$cmd\" — try: $0 --help" ;;
+  esac
+}
+
+main "$@"

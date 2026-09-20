@@ -1,0 +1,29 @@
+# Rendered by bin/ambassyctl; @PLACEHOLDERS@ are substituted at install time.
+
+[Unit]
+Description=Ambassy MCP bridge
+Documentation=file://@ROOT@/docs/service.md
+After=network-online.target ambassy-a2a.service
+Wants=network-online.target
+
+# After= only, never Requires=: the bridge builds its A2A client lazily, so it may start
+# before the agent, and it may legitimately run alone against a remote A2A_URL.
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart="@NODE@" "@TSX@" "@ENTRY@"
+
+Environment="PATH=@PATH@"
+@ENV@
+
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+StandardOutput=append:@OUT@
+StandardError=append:@ERR@
+
+[Install]
+WantedBy=default.target

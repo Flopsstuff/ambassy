@@ -1,0 +1,38 @@
+# Rendered by bin/ambassyctl; @PLACEHOLDERS@ are substituted at install time.
+#
+# A --user unit, not a system one: the coding agent behind the bridge reads the
+# credentials in the operator's home directory. On a headless host run
+# `loginctl enable-linger $USER` so the unit survives logout — ambassyctl offers to.
+
+[Unit]
+Description=Ambassy A2A agent
+Documentation=file://@ROOT@/docs/service.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+
+# node + tsx by absolute path, for the same reason the launchd unit does it: a service
+# manager starts with a minimal PATH, and under nvm the interpreter is not on it.
+ExecStart="@NODE@" "@TSX@" "@ENTRY@"
+
+# Only what selects the process. Everything else is read from .env at startup, and a
+# variable set here wins: process.loadEnvFile() leaves the environment alone.
+Environment="PATH=@PATH@"
+@ENV@
+
+Restart=on-failure
+RestartSec=10
+
+# The executor disposes of its ACP adapters on SIGTERM; give it room to do that before
+# the group is killed.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+StandardOutput=append:@OUT@
+StandardError=append:@ERR@
+
+[Install]
+WantedBy=default.target

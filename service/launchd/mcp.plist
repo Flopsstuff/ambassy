@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Rendered by bin/ambassyctl; @PLACEHOLDERS@ are substituted at install time.
+
+  launchd has no ordering between agents, and this unit needs none: the MCP bridge
+  builds its A2A client lazily, on the first tool call, so coming up before the agent
+  costs nothing. If the agent is still down by then, the call fails and the next one
+  tries again.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@NODE@</string>
+    <string>@TSX@</string>
+    <string>@ENTRY@</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>@ROOT@</string>
+
+  <!-- The endpoint's own configuration — port, host, token, upstream agent — lives in
+       .env, which the process reads at startup. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@PATH@</string>
+@ENV@
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>@OUT@</string>
+  <key>StandardErrorPath</key>
+  <string>@ERR@</string>
+</dict>
+</plist>
