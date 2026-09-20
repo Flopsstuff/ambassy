@@ -20,6 +20,10 @@ input and output modes, security schemes, and the transports the agent answers o
 }
 ```
 
+`name` is the only field in there that identifies *this* agent rather than what it can do, so it
+is what a caller has to go on with two of them in front of it. It comes from `AGENT_NAME`; blank
+leaves the built-in name — `Revisor` above, `Claude (via ACP)` or `Codex (via ACP)` on the bridge.
+
 The client hardcodes neither a URL nor a protocol: `ClientFactory.createFromUrl()` fetches the
 card and picks a transport out of `supportedInterfaces`. It dials what the card says, not the
 address it fetched the card from, and `PUBLIC_URL` is the knob over that field: it routes a client

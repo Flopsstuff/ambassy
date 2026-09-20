@@ -49,6 +49,7 @@ Two things about that loader are worth knowing, both verified rather than assume
 
 | Variable | Default | Effect |
 |---|---|---|
+| `AGENT_NAME` | empty | What the agent answers to: the `name` in the Agent Card, and the `serverInfo` the MCP bridge returns at `initialize`. Empty keeps `Claude (via ACP)` / `Codex (via ACP)`, `Revisor` for the stub and `ambassy-mcp` for the bridge |
 | `ACP_CWD` | empty | Where the agent may work. Empty means a directory per conversation under `.acp-sandboxes/`. Setting it makes the root *not ours*, which tightens the classifier — see [permissions](permissions.md) |
 | `ACP_ALLOW_EXECUTE` | empty | `true` permits shell and network even in a root you supplied |
 | `ACP_IDLE_TIMEOUT_MS` | `300000` | How long a conversation may sit idle before its adapter is stopped. A task in `INPUT_REQUIRED` holds its adapter regardless |
@@ -64,6 +65,15 @@ Two things about that loader are worth knowing, both verified rather than assume
 
 `ACP_AGENT` is not in `.env` — it comes from the launch script, which is the whole point of having
 two of them.
+
+`AGENT_NAME` is the one key here that crosses all three processes, because from a caller's side
+there is only one thing being named: discovery reads the card's `name`, an MCP client reads
+`serverInfo`, and an agent that announced two different names in the two places would be a puzzle
+rather than a distinction. On the card it replaces the whole default, not just the backend label —
+`(via ACP)` is true of every instance of this bridge, so it separates none of them, while the
+backend behind it stays visible in the card's description and skill tags. The stub is the usual
+exception: `src/agent.ts` reads no `.env`, so there the name comes from the shell or from the
+service unit, which `ambassyctl install --backend revisor` copies out of `.env` for you.
 
 ## Files that are not committed
 

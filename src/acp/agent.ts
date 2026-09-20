@@ -58,6 +58,12 @@ const PORT = Number(process.env.PORT || 41241);
 const HOST = process.env.HOST || '127.0.0.1';
 // The URL the agent advertises in its card. Override it to route clients through the wire-tap.
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://${HOST}:${PORT}/`;
+// What the card calls this agent. AGENT_NAME replaces the whole default rather than standing in
+// for `backend.label` inside it: `(via ACP)` is true of every instance of this bridge, so it
+// separates none of them, and which backend answers is still on the card twice — in the
+// description built from the adapter's own `initialize`, and in the skill's tags. A name an
+// operator set is also a name a client config can pin, which a decorated one would not be.
+const AGENT_NAME = process.env.AGENT_NAME || `${backend.label} (via ACP)`;
 // Empty means a throwaway sandbox per conversation — see acp-client.ts.
 const ACP_CWD = process.env.ACP_CWD ?? '';
 const ACP_ALLOW_EXECUTE = process.env.ACP_ALLOW_EXECUTE === 'true';
@@ -570,7 +576,7 @@ console.log(
 );
 
 const agentCard: AgentCard = {
-  name: `${backend.label} (via ACP)`,
+  name: AGENT_NAME,
   description: `An A2A front for ${downstream?.name ?? backend.bin}: the task is forwarded to a real coding agent over ACP.`,
   supportedInterfaces: [
     {

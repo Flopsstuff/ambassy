@@ -35,6 +35,11 @@ const PORT = Number(process.env.PORT || 41241);
 const HOST = process.env.HOST || '127.0.0.1';
 // The URL the agent advertises in its card. Override it to route clients through the wire-tap.
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://${HOST}:${PORT}/`;
+// What the card calls this agent — the one field a caller has to tell two agents apart, since
+// discovery starts at the card and nothing else in it is a name. Blank keeps `Revisor`, so a
+// client config that pins the old one still matches. Unlike the two bridges this file reads no
+// .env, so here the value comes from the shell or from the service unit.
+const AGENT_NAME = process.env.AGENT_NAME || 'Revisor';
 
 // --- Part/Message helpers: in v1.0 a Part is a discriminated union on `content.$case` ---
 
@@ -210,7 +215,7 @@ class RevisorExecutor implements AgentExecutor {
 // --- Agent Card: the business card every interaction starts from ---
 
 const agentCard: AgentCard = {
-  name: 'Revisor',
+  name: AGENT_NAME,
   description: 'Computes text statistics. A demo agent for learning A2A v1.0.',
   supportedInterfaces: [
     {
@@ -259,6 +264,6 @@ app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHand
 app.use(jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
 
 app.listen(PORT, HOST, () => {
-  console.log(`Revisor listening on http://${HOST}:${PORT}`);
+  console.log(`${AGENT_NAME} listening on http://${HOST}:${PORT}`);
   console.log(`Agent Card:          http://${HOST}:${PORT}/${AGENT_CARD_PATH}`);
 });

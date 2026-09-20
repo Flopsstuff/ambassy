@@ -16,6 +16,13 @@ code change.
 Run it with `yarn mcp`. It prints its bearer token and the exact command that connects a client
 to it.
 
+It introduces itself as `ambassy-mcp` in the `serverInfo` of every `initialize` response, which
+is the only name the calling agent ever sees for this endpoint — and the only way to tell two of
+them apart in one client config. `AGENT_NAME` replaces it, and is the same key that names the
+agent in its Agent Card: from the caller's side both are the name of the thing it is reaching.
+The bearer realm does not follow it, because a realm names the credential that opens the
+endpoint and renaming the agent mints no new token.
+
 ## The four tools
 
 | Tool | Arguments | What it does |

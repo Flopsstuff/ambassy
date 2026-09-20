@@ -51,6 +51,12 @@ shipped in `.env.example`, otherwise reached `mkdirSync('')` and killed the serv
 listened. `ACP_CWD`, `A2A_AGENTS`, `MCP_ALLOWED_HOSTS` and `MCP_TOKEN` keep `??`, because there
 blank is a real answer.
 
+`AGENT_NAME` names the agent to callers in both places one looks: the Agent Card's `name` and the
+MCP `serverInfo`. Blank keeps `Claude (via ACP)` / `Codex (via ACP)`, `Revisor` and `ambassy-mcp`.
+On the card it replaces the default outright — `(via ACP)` separates no two instances, and the
+backend stays named in the description and the skill tags. Not followed by the bearer realm, which
+names a credential, nor by the ACP client name, which points the other way.
+
 ## Package manager
 
 **Yarn 4 (Berry)**, pinned by the `packageManager` field in `package.json`; Corepack resolves that
@@ -279,8 +285,9 @@ Three consequences worth knowing before changing anything there:
   invalidates the client config holding the old one — a nuisance by hand, an outage for a service.
 - **`A2A_URL` is pinned too** when both units go in together, because its default names port
   41241 and a repository that moved `PORT` would leave the bridge pointing at nothing.
-- **`src/agent.ts` reads no `.env`,** so `--backend revisor` copies `PORT`, `HOST` and
-  `PUBLIC_URL` into the unit. The two bridges read the file themselves.
+- **`src/agent.ts` reads no `.env`,** so `--backend revisor` copies `PORT`, `HOST`, `PUBLIC_URL`
+  and `AGENT_NAME` into the unit — blank ones omitted, since the unit wins and an empty value
+  would pin the default. The two bridges read the file themselves.
 
 `status` prints what the service manager believes next to what the network answers: `card ok` is
 the Agent Card responding, `guard ok` is the MCP endpoint refusing an unauthenticated probe with

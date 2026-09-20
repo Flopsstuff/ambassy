@@ -202,6 +202,33 @@ entry_for_backend() { # claude|codex|revisor
   esac
 }
 
+# Escaping lives here, next to the printf that builds each line, because what has to be
+# escaped is decided by the file being written and not by the key being written into it:
+# `AGENT_NAME=Research & Development` and a repository path with an `&` in it are the same
+# bug, and it is XML on launchd and shell-ish quoting on systemd. A value is never edited
+# for safety's sake — the operator chose it, and the job here is to carry it through intact.
+
+# Text content of a plist <string> or <key>. `&` first: it would otherwise escape the
+# ampersands the other two rules introduce.
+xml_escape() { # VALUE
+  local v="$1"
+  v="${v//&/&amp;}"; v="${v//</&lt;}"; v="${v//>/&gt;}"
+  printf '%s' "$v"
+}
+
+# Inside the double quotes of `Environment="KEY=VALUE"`. systemd.exec(5) says that line is
+# unquoted by the rules in systemd.syntax(7) and that specifier expansion is performed on
+# it: quotes are stripped, C escapes are read, and `%h`/`%i` are substituted. So a quote
+# arrives as `\"`, a backslash as `\\` — backslash first, or it would escape the escapes —
+# and a literal `%` as `%%`. A newline is escaped rather than passed through because raw it
+# would end the directive and leave the rest of the value being read as the next one;
+# systemd then rejects the value as non-printable, which is a refusal and not an injection.
+systemd_escape() { # VALUE
+  local v="$1"
+  v="${v//\\/\\\\}"; v="${v//\"/\\\"}"; v="${v//$'\n'/\\n}"; v="${v//%/%%}"
+  printf '%s' "$v"
+}
+
 unit_env_file() { # PATH_TO_TMPFILE KEY=VALUE...
   local out="$1"; shift
   : > "$out"
@@ -209,10 +236,41 @@ unit_env_file() { # PATH_TO_TMPFILE KEY=VALUE...
   for kv in "$@"; do
     key="${kv%%=*}"; value="${kv#*=}"
     case "$PLATFORM" in
-      launchd) printf '    <key>%s</key>\n    <string>%s</string>\n' "$key" "$value" >> "$out" ;;
-      systemd) printf 'Environment="%s=%s"\n' "$key" "$value" >> "$out" ;;
+      launchd) printf '    <key>%s</key>\n    <string>%s</string>\n' \
+                 "$(xml_escape "$key")" "$(xml_escape "$value")" >> "$out" ;;
+      systemd) printf 'Environment="%s=%s"\n' \
+                 "$(systemd_escape "$key")" "$(systemd_escape "$value")" >> "$out" ;;
     esac
   done
+}
+
+# The right-hand side of a sed `s|…|…|`, where `&` stands for the whole match, a backslash
+# starts an escape and `|` ends the command. A repository path with an `&` in it reaches
+# the unit mangled long before any XML rule applies.
+sed_escape() { # VALUE
+  local v="$1"
+  v="${v//\\/\\\\}"; v="${v//&/\\&}"; v="${v//|/\\|}"
+  printf '%s' "$v"
+}
+
+# One @PLACEHOLDER@ substitution: escaped for the file being written, then for the sed that
+# writes it. The order is the point — reversed, sed would be handed the `&` of an `&amp;`
+# and would put the match back in its place.
+unit_value() { # VALUE
+  local v="$1"
+  case "$PLATFORM" in
+    # Every placeholder in the plist sits inside a <string>, so the XML rule covers them all.
+    launchd) v="$(xml_escape "$v")" ;;
+    # Only the specifier here, deliberately, and not the quoting rules above. These values
+    # land in five directives; the template quotes ExecStart and Environment and leaves
+    # WorkingDirectory, Documentation and StandardOutput bare, and systemd unescapes per
+    # directive rather than uniformly — so `\"` would be right in two of them and a literal
+    # backslash-quote in the other three. `%` is expanded in all five, so doubling it is
+    # right everywhere. A *path* holding a quote thus stays unsupported on systemd; an
+    # environment *value* holding one does not, and that is the case an operator can hit.
+    systemd) v="${v//%/%%}" ;;
+  esac
+  sed_escape "$v"
 }
 
 render_unit() { # UNIT ENTRY ENVFILE
@@ -233,14 +291,14 @@ render_unit() { # UNIT ENTRY ENVFILE
 
   mkdir -p "$(dirname "$dest")" "$LOG_DIR"
   sed \
-    -e "s|@LABEL@|$label|g" \
-    -e "s|@ROOT@|$ROOT|g" \
-    -e "s|@NODE@|$NODE_BIN|g" \
-    -e "s|@TSX@|$TSX_BIN|g" \
-    -e "s|@ENTRY@|$entry|g" \
-    -e "s|@PATH@|$unit_path|g" \
-    -e "s|@OUT@|$LOG_DIR/$unit.out.log|g" \
-    -e "s|@ERR@|$LOG_DIR/$unit.err.log|g" \
+    -e "s|@LABEL@|$(unit_value "$label")|g" \
+    -e "s|@ROOT@|$(unit_value "$ROOT")|g" \
+    -e "s|@NODE@|$(unit_value "$NODE_BIN")|g" \
+    -e "s|@TSX@|$(unit_value "$TSX_BIN")|g" \
+    -e "s|@ENTRY@|$(unit_value "$entry")|g" \
+    -e "s|@PATH@|$(unit_value "$unit_path")|g" \
+    -e "s|@OUT@|$(unit_value "$LOG_DIR/$unit.out.log")|g" \
+    -e "s|@ERR@|$(unit_value "$LOG_DIR/$unit.err.log")|g" \
     -e "/@ENV@/r $envfile" \
     -e "/@ENV@/d" \
     "$tmpl" > "$dest"
@@ -459,13 +517,14 @@ cmd_install() {
         entry="$(entry_for_backend "$backend")"
         if [ "$backend" = revisor ]; then
           # The stub executor is the one entry point that does not read .env, so what it
-          # binds to has to travel in the unit. The two bridges read the file themselves.
-          local pub; pub="$(env_get PUBLIC_URL "")"
-          if [ -n "$pub" ]; then
-            unit_env_file "$envtmp" "PORT=$(a2a_port)" "HOST=$(a2a_host)" "PUBLIC_URL=$pub"
-          else
-            unit_env_file "$envtmp" "PORT=$(a2a_port)" "HOST=$(a2a_host)"
-          fi
+          # binds to and what it calls itself have to travel in the unit. The two bridges
+          # read the file themselves. Blank keys are left out rather than passed empty: the
+          # unit wins over .env, so an empty one here would pin the default for good.
+          local pub name; pub="$(env_get PUBLIC_URL "")"; name="$(env_get AGENT_NAME "")"
+          local -a stub_env=("PORT=$(a2a_port)" "HOST=$(a2a_host)")
+          [ -n "$pub" ] && stub_env+=("PUBLIC_URL=$pub")
+          [ -n "$name" ] && stub_env+=("AGENT_NAME=$name")
+          unit_env_file "$envtmp" "${stub_env[@]}"
         else
           env_set ACP_AGENT "$backend" "Which coding agent the ACP bridge starts. Set by bin/ambassyctl."
           unit_env_file "$envtmp"

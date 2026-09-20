@@ -40,6 +40,10 @@ const conn = acp.client({ name: 'ambassy-bridge' })
 `connect`, not `connectWith`: the connection must outlive a single callback. `ClientSideConnection`
 still exists but is deprecated in SDK 1.4.0.
 
+The `name` in `acp.client({ … })` is what the bridge calls *itself* downstream — the editor's side
+of ACP — and stays `ambassy-bridge` whatever `AGENT_NAME` says. `AGENT_NAME` names the agent
+upstream, in the Agent Card an A2A caller reads; the two point in opposite directions.
+
 The bridge advertises `fs.readTextFile` and `fs.writeTextFile` deliberately. Declaring them makes
 the agent route file access through the bridge rather than touching the disk unobserved, so every
 read and write passes the boundary check and lands in the log. `terminal` is not advertised —

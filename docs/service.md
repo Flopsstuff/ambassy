@@ -56,8 +56,27 @@ an interpreter that no longer exists, and would hand the ACP adapters the same v
 to resolve their own `#!/usr/bin/env node` against. `AMBASSY_NODE` overrides the choice.
 
 The one exception is the stub executor: `src/agent.ts` reads no `.env` at all, so when it is
-installed with `--backend revisor` the script copies `PORT`, `HOST` and `PUBLIC_URL` into the
-unit. The `.env` file remains the place you edit them.
+installed with `--backend revisor` the script copies `PORT`, `HOST`, `PUBLIC_URL` and
+`AGENT_NAME` into the unit. The `.env` file remains the place you edit them. A key left blank
+there is left out of the unit rather than copied as an empty string — the unit wins over `.env`,
+so an empty value written once would pin the built-in default past any later edit.
+
+Whatever travels that way is escaped for the file being written, not for some general idea of a
+safe character, because the two targets disagree about what is dangerous. A plist is XML, so
+`AGENT_NAME=Research & Development` has to reach it as `Research &amp; Development` or `plutil
+-lint` rejects the unit and launchd never loads it. A systemd unit is not XML and does not care
+about the ampersand, but `Environment="KEY=VALUE"` is unquoted by the rules in `systemd.syntax(7)`
+with specifier expansion on top, so there a quote goes in as `\"`, a backslash as `\\` and a
+literal percent as `%%`. Nothing is stripped from a value in either case: the operator chose the
+name, and the job is to deliver it unchanged.
+
+The same applies to the paths substituted into the template — a checkout under a directory with
+an `&` in its name is the same broken plist — with one gap left open deliberately. On systemd
+those paths land in five directives of which the template quotes two, and systemd unescapes per
+directive rather than uniformly, so `\"` would be right inside `ExecStart` and a literal
+backslash-quote in `WorkingDirectory`. Only the percent is escaped there, which is correct in all
+five; a repository path containing a double quote is therefore not supported on systemd. An
+environment *value* containing one is, which is the case an operator can actually provoke.
 
 This layering works because a variable set in the unit wins: `process.loadEnvFile()` does not
 overwrite a key already in the environment. The same rule is what makes `HOST=0.0.0.0 yarn agent`

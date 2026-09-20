@@ -51,6 +51,12 @@ const ALLOWED_HOSTS = (process.env.MCP_ALLOWED_HOSTS ?? '').split(',').map((h) =
 const LOG_DIR = process.env.LOG_DIR || fileURLToPath(new URL('../../logs/', import.meta.url));
 const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES || 5_000_000);
 const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES || 5);
+// What this endpoint calls itself in the `serverInfo` of every `initialize` response — the only
+// name a calling agent sees for it, and the one thing that separates two bridges in one client
+// config. The same key as the Agent Card's name on purpose: from the caller's side both are the
+// name of the agent it is reaching, and a bridge announcing one thing while the agent behind it
+// announces another would be a puzzle, not a distinction. Blank keeps `ambassy-mcp`.
+const AGENT_NAME = process.env.AGENT_NAME || 'ambassy-mcp';
 
 /** `A2A_AGENTS` wins when set; otherwise the single agent at `A2A_URL` needs no alias. */
 const agents = ((): Record<string, string> => {
@@ -84,7 +90,7 @@ const app = createMcpExpressApp({
 app.use(MCP_PATH, bearerGuard(token));
 
 app.all(MCP_PATH, async (req: Request, res: Response) => {
-  const server = new McpServer({ name: 'ambassy-mcp', version: '0.1.0' });
+  const server = new McpServer({ name: AGENT_NAME, version: '0.1.0' });
   registerTools(server, { pool, logs, heartbeatMs: HEARTBEAT_MS, silenceLimitMs: SILENCE_MS });
 
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });

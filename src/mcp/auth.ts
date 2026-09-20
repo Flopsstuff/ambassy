@@ -53,6 +53,9 @@ const bearerFrom = (header: string | undefined): string | null => {
  *
  * `WWW-Authenticate` is not decoration: it is what tells a client the endpoint wants
  * a bearer token rather than being broken.
+ *
+ * Its realm stays `ambassy-mcp` and does not follow `AGENT_NAME`: a realm names the set of
+ * credentials that open this endpoint, and renaming the agent does not mint a new token.
  */
 export const bearerGuard =
   (expected: string) =>
