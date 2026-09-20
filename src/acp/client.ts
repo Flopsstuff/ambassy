@@ -7,8 +7,7 @@
  * keeping one turn in flight at a time, and reaping processes that went quiet.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import * as acp from '@agentclientprotocol/sdk';
@@ -16,12 +15,12 @@ import type { ActiveSession, ClientConnection, InitializeResponse, Usage } from 
 import type { Logs } from './log.ts';
 import {
   decidePermission,
-  insideRoot,
   readTextFileInsideRoot,
   writeTextFileInsideRoot,
   type Boundary,
   type Supervision,
 } from './permissions.ts';
+import { Sandboxes, resolveBoundary } from './sandbox.ts';
 
 export type BackendId = 'claude' | 'codex';
 
@@ -60,24 +59,6 @@ const BIN_DIR = fileURLToPath(new URL('../../node_modules/.bin/', import.meta.ur
 /** Where per-conversation sandboxes are made when ACP_CWD is empty. Gitignored. */
 const SANDBOX_DIR = fileURLToPath(new URL('../../.acp-sandboxes/', import.meta.url));
 
-/**
- * A context id reduced to something readable in a directory listing.
- *
- * Only a label. It names a sandbox for a human reading `.acp-sandboxes/`; it never decides
- * which directory a conversation gets, because the id is text the caller chose.
- */
-const label = (contextId: string): string => contextId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'ctx';
-
-/** True when `target` is a real directory — not a symlink to one — inside `parent`. */
-const ownDirectory = (parent: string, target: string): boolean => {
-  if (target === parent || !insideRoot(parent, target)) return false;
-  try {
-    return lstatSync(target).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
 export interface RegistryOptions {
   backend: Backend;
   /** ACP_CWD, if set. Empty means "make a sandbox per conversation". */
@@ -85,6 +66,8 @@ export interface RegistryOptions {
   allowExecute: boolean;
   idleTimeoutMs: number;
   logs: Logs;
+  /** Where the per-conversation sandboxes go. Defaults to `.acp-sandboxes/` in the repo. */
+  sandboxDir?: string;
 }
 
 const CLIENT_NAME = 'ambassy-bridge';
@@ -162,7 +145,45 @@ const stop = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
   clearTimeout(executioner);
 };
 
-class Runtime {
+/**
+ * Put the session into the mode where the adapter asks us before it acts.
+ *
+ * A mode that cannot be established ends the session. Logging the miss and prompting
+ * anyway leaves the adapter in whichever mode it chose, and for both backends the
+ * default is one where it approves its own tool calls: the bridge would go on reporting
+ * a supervision it is no longer performing.
+ */
+export const superviseMode = async (
+  conn: Pick<ClientConnection, 'agent'>,
+  session: Pick<ActiveSession, 'sessionId' | 'modes'>,
+  backend: Backend,
+  contextId: string,
+): Promise<string> => {
+  const wanted = backend.supervisedModeId;
+  const modes = session.modes;
+  const available = modes?.availableModes.map((m) => m.id) ?? [];
+
+  if (!modes || !available.includes(wanted)) {
+    throw new Error(
+      `${backend.bin} does not offer the supervised mode '${wanted}' ` +
+        `(offered: ${available.join(', ') || 'none'}); refusing to prompt unsupervised`,
+    );
+  }
+  if (modes.currentModeId === wanted) return wanted;
+
+  await conn.agent.request(acp.methods.agent.session.setMode, { sessionId: session.sessionId, modeId: wanted });
+  console.log(`  ⚙ ${contextId.slice(0, 8)}: mode ${modes.currentModeId} → ${wanted}`);
+  return wanted;
+};
+
+/**
+ * One conversation's adapter: its session, its turn queue and what it has cost.
+ *
+ * Exported because it is worth exercising on its own — everything below is bookkeeping
+ * over a child process rather than anything that talks to one — while `AcpRegistry` is
+ * still the only thing that constructs one in production.
+ */
+export class Runtime {
   readonly openTasks = new Set<string>();
   private queue: Promise<unknown> = Promise.resolve();
   private inFlight = 0;
@@ -263,15 +284,12 @@ export type AcpRuntime = Runtime;
 
 export class AcpRegistry {
   private readonly runtimes = new Map<string, Runtime>();
-  /**
-   * Which directory belongs to which conversation — kept here rather than computed from
-   * the context id, and kept past the adapter's death so a returning conversation finds
-   * the files its earlier turns left behind.
-   */
-  private readonly sandboxes = new Map<string, string>();
+  private readonly sandboxes: Sandboxes;
   private reaper?: NodeJS.Timeout;
 
-  constructor(private readonly opts: RegistryOptions) {}
+  constructor(private readonly opts: RegistryOptions) {
+    this.sandboxes = new Sandboxes(opts.sandboxDir ?? SANDBOX_DIR);
+  }
 
   /**
    * Start an adapter, read who it says it is, shut it down again.
@@ -314,55 +332,6 @@ export class AcpRegistry {
     }
   }
 
-  /**
-   * The area one conversation is confined to, and how much it is trusted inside it.
-   *
-   * `owned` is the whole trust model, so it is asserted rather than inferred: it is true
-   * only for a directory this registry made by itself, a few lines below.
-   */
-  private boundaryFor(contextId: string): Boundary {
-    const { cwdOverride, allowExecute } = this.opts;
-    if (cwdOverride) {
-      const root = resolve(cwdOverride);
-      // Claude validates cwd on session/new — absolute, exists, is a directory — so a
-      // bad ACP_CWD is worth catching here, where the message can say what to fix.
-      if (!existsSync(root)) throw new Error(`ACP_CWD points at a path that does not exist: ${root}`);
-      if (!statSync(root).isDirectory()) throw new Error(`ACP_CWD is not a directory: ${root}`);
-      return { root: realpathSync(root), owned: false, allowExecute };
-    }
-    return { root: this.sandboxFor(contextId), owned: true, allowExecute };
-  }
-
-  /**
-   * Allocate — or recover — the disposable directory for one conversation.
-   *
-   * The directory is never named after the `contextId`. That id arrives from the A2A
-   * caller, and `join(SANDBOX_DIR, '..')` is the repository root: the bridge would then
-   * mark its own checkout `owned: true`, which is the flag that lets a shell run there.
-   * `mkdtemp` sidesteps the whole question — it fails unless the directory is new, so two
-   * conversations cannot land in one, and neither an existing directory nor a symlink
-   * wearing the right name can be adopted as one the bridge created.
-   *
-   * Deliberately NOT under os.tmpdir(). Codex's sandbox counts /tmp and $TMPDIR as
-   * writable and asks no one before writing there, so sandboxes placed in the temp tree
-   * would be mutually reachable without a single permission request. Here each one sits
-   * in its own directory whose only writable neighbour is itself.
-   */
-  private sandboxFor(contextId: string): string {
-    mkdirSync(SANDBOX_DIR, { recursive: true });
-    // Resolved once, here: a path that reaches the agent through a symlink comes back
-    // resolved, and a textual comparison would then deny the agent its own root.
-    const parent = realpathSync(SANDBOX_DIR);
-
-    const known = this.sandboxes.get(contextId);
-    if (known && ownDirectory(parent, known)) return known;
-
-    const root = realpathSync(mkdtempSync(join(parent, `${label(contextId)}-`)));
-    if (!ownDirectory(parent, root)) throw new Error(`sandbox for ${contextId} escaped ${parent}: ${root}`);
-    this.sandboxes.set(contextId, root);
-    return root;
-  }
-
   /** The runtime for a conversation, created on first use. */
   async acquire(contextId: string): Promise<Runtime> {
     const existing = this.runtimes.get(contextId);
@@ -370,15 +339,15 @@ export class AcpRegistry {
     if (existing) this.runtimes.delete(contextId);
 
     const { logs, backend } = this.opts;
-    const boundary = this.boundaryFor(contextId);
+    const boundary = resolveBoundary(this.opts, contextId, this.sandboxes);
     console.log(`  ⚙ ${contextId.slice(0, 8)}: starting ${backend.bin} in ${boundary.root}`);
 
     const state: TurnState = { denials: [] };
     const started = Date.now();
     const { child, conn } = connect(backend, boundary.root, () => ({
       boundary,
-      // Stated, not guessed: `superviseMode` below refuses to return unless the session
-      // is in this mode, so by the time a permission request arrives it is the truth.
+      // Stated, not guessed: `superviseMode` refuses to return unless the session is in
+      // this mode, so by the time a permission request arrives it is the truth.
       supervisedModeId: backend.supervisedModeId,
       onDeny: (summary) => state.denials.push(summary),
       log: (event, fields) => logs.work(event, { contextId, taskId: state.taskId ?? null, ...fields }),
@@ -407,7 +376,7 @@ export class AcpRegistry {
       // `mcpServers` must be present even when empty — its absence is a hard error,
       // while an empty array is fine.
       session = await conn.agent.buildSession({ cwd: boundary.root, mcpServers: [] }).start();
-      const mode = await this.superviseMode(conn, session, contextId);
+      const mode = await superviseMode(conn, session, backend, contextId);
 
       logs.call('session.new', {
         contextId,
@@ -449,36 +418,6 @@ export class AcpRegistry {
       await stop(child);
       throw err;
     }
-  }
-
-  /**
-   * Put the session into the mode where the adapter asks us before it acts.
-   *
-   * A mode that cannot be established ends the session. Logging the miss and prompting
-   * anyway leaves the adapter in whichever mode it chose, and for both backends the
-   * default is one where it approves its own tool calls: the bridge would go on reporting
-   * a supervision it is no longer performing.
-   */
-  private async superviseMode(
-    conn: ClientConnection,
-    session: ActiveSession,
-    contextId: string,
-  ): Promise<string> {
-    const wanted = this.opts.backend.supervisedModeId;
-    const modes = session.modes;
-    const available = modes?.availableModes.map((m) => m.id) ?? [];
-
-    if (!modes || !available.includes(wanted)) {
-      throw new Error(
-        `${this.opts.backend.bin} does not offer the supervised mode '${wanted}' ` +
-          `(offered: ${available.join(', ') || 'none'}); refusing to prompt unsupervised`,
-      );
-    }
-    if (modes.currentModeId === wanted) return wanted;
-
-    await conn.agent.request(acp.methods.agent.session.setMode, { sessionId: session.sessionId, modeId: wanted });
-    console.log(`  ⚙ ${contextId.slice(0, 8)}: mode ${modes.currentModeId} → ${wanted}`);
-    return wanted;
   }
 
   get size(): number {

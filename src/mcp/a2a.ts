@@ -41,6 +41,15 @@ export interface A2APoolOptions {
   discoveryTimeoutMs: number;
   /** How long a single request/response call (task, cancel, card) may take. */
   requestTimeoutMs: number;
+  /**
+   * How a client for one agent is built, defaulting to the SDK's card-driven factory.
+   *
+   * The seam exists so the pool can be exercised without an agent on the other end:
+   * `createFromUrl` fetches a card and negotiates a transport, which is precisely what a
+   * test of the pool's own bookkeeping — aliases, caching, the shape of a turn — has no
+   * business doing.
+   */
+  createClient?: (url: string) => Promise<Client>;
 }
 
 /**
@@ -338,11 +347,12 @@ export class A2APool {
     if (existing) return abortable(existing, signal);
 
     const what = `discovery of agent "${alias}" at ${url}`;
+    const build = this.opts.createClient ?? ((target: string) => this.factory.createFromUrl(target));
     const built = withDeadline(
       // The bounded fetch inside the card resolver usually wins the race against the
       // deadline below, and `TimeoutError: The operation was aborted` names neither the
       // agent nor the limit. Both paths therefore say the same thing.
-      this.factory.createFromUrl(url).catch((err: unknown) => {
+      build(url).catch((err: unknown) => {
         const reason =
           (err as Error)?.name === 'TimeoutError'
             ? `no agent card within ${this.discoveryTimeoutMs} ms`
