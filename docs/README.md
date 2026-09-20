@@ -29,6 +29,7 @@ behaviour is what is written down, and the disagreement is called out.
 | [configuration.md](configuration.md) | Commands, environment variables, files |
 | [logging.md](logging.md) | The two log channels, their vocabulary, and rotation |
 | [troubleshooting.md](troubleshooting.md) | Errors you will actually hit, and what they mean |
+| [repository-audit.md](repository-audit.md) | Repository audit, confirmed defects, priorities, and acceptance criteria for fixes |
 
 ## Source layout
 
