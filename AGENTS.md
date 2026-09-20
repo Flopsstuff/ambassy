@@ -28,7 +28,9 @@ All three servers listen on the same port and serve the same protocol, so `clien
 `tap` work against any of them without a change. They bind `127.0.0.1` by default: an A2A server
 here runs `UserBuilder.noAuthentication`, so a wider bind hands a coding agent to the network with
 nothing in front of it. `HOST` selects the interface, and `HOST=0.0.0.0` opens one up deliberately.
-The MCP bridge is the side meant to face a network, and it has a bearer token (`MCP_HOST`).
+The tap reads the same variable and binds the same way, because it forwards everything it is given
+to that unauthenticated agent — a second door, not a passive observer; `TARGET_HOST` says where it
+forwards. The MCP bridge is the side meant to face a network, and it has a bearer token (`MCP_HOST`).
 
 To inspect raw traffic (three terminals):
 

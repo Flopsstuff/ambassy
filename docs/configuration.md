@@ -17,6 +17,10 @@ script and the tap work against any of them unchanged. They also bind the same i
 a coding agent on the network with nothing in front of it. `HOST=0.0.0.0` opens one up when that
 is what you want — the MCP bridge is the side meant to face a network, and it has a token.
 
+The tap reads the same `HOST` and for the same reason: it forwards whatever it is given to an
+agent that authenticates nobody, so it is a second door into that agent rather than a passive
+observer. `TARGET_HOST` (default `127.0.0.1`) says where it forwards.
+
 To watch the traffic, three terminals:
 
 ```bash
@@ -54,7 +58,8 @@ Two things about that loader are worth knowing, both verified rather than assume
 | `ACP_ALLOW_EXECUTE` | empty | `true` permits shell and network even in a root you supplied |
 | `ACP_IDLE_TIMEOUT_MS` | `300000` | How long a conversation may sit idle before its adapter is stopped. A task in `INPUT_REQUIRED` holds its adapter regardless |
 | `PORT` | `41241` | Port to listen on |
-| `HOST` | `127.0.0.1` | Interface to bind. Loopback by default because there is no authentication on the A2A side at all; `0.0.0.0` exposes the agent to the network |
+| `HOST` | `127.0.0.1` | Interface to bind, for the agents and for the tap alike. Loopback by default because there is no authentication on the A2A side at all; `0.0.0.0` exposes the agent to the network |
+| `TARGET_HOST` | `127.0.0.1` | Tap only: the address it forwards to. An IP rather than `localhost`, which can resolve to `::1` while the agent listens on IPv4 |
 | `PUBLIC_URL` | `http://$HOST:$PORT/` | The address advertised in the Agent Card. Must name an address callers can reach, so it moves with `HOST` |
 | `LOG_DIR` | `logs/` | Where the two JSON Lines logs go |
 | `LOG_MAX_BYTES` | `5000000` | Rotation threshold per channel |
