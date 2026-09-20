@@ -187,7 +187,11 @@ The official samples worth reading first — the SDK's own README points at them
 `authentication` (Bearer/JWT via Passport), `verify-signing` (signed cards, JWS + JWKS),
 and `extensions` (protocol extensions).
 
-Specification: https://a2a-protocol.org/v1.0.0/specification/
+Specifications, one per protocol this repository speaks:
+
+- A2A v1.0.0 — <https://a2a-protocol.org/v1.0.0/specification/>
+- ACP — <https://agentclientprotocol.com/protocol/overview>
+- MCP `2025-06-18` — <https://modelcontextprotocol.io/specification/2025-06-18>
 
 ## License
 

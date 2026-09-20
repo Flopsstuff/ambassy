@@ -448,7 +448,17 @@ working guide, not the explanation.
 
 ## Source of truth
 
-The specification outranks both the SDK and this file: <https://a2a-protocol.org/v1.0.0/specification/>.
-The SDK implements v1.0.0; when behavior disagrees, check the spec rather than guessing from the
+Three protocols meet here, and each has a specification that outranks both its SDK and this file.
+The versions are the ones this repository actually speaks — read off the handshakes, not off the
+package names:
+
+| Protocol | Specification | What we speak |
+|---|---|---|
+| **A2A** | <https://a2a-protocol.org/v1.0.0/specification/> | v1.0.0, via `@a2a-js/sdk` 1.2.0 |
+| **ACP** | <https://agentclientprotocol.com/protocol/overview> | `PROTOCOL_VERSION` 1, via `@agentclientprotocol/sdk` 1.4.0 |
+| **MCP** | <https://modelcontextprotocol.io/specification/2025-06-18> | `2025-06-18`, the version our `initialize` answers with, via `@modelcontextprotocol/server` 2.0.0 |
+
+For A2A in particular: when behavior disagrees, check the spec rather than guessing from the
 bundle — `dist` also ships the v0.3 compatibility layer, and its constants are easy to mistake for
-the current ones.
+the current ones. The same caution applies to ACP, where the SDK's own version (1.4.0) and the
+protocol's (1) are different numbers that both appear in the handshake.
