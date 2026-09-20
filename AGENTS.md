@@ -113,6 +113,29 @@ The event translation, which is the point of the exercise:
 Chunks are coalesced on purpose: Codex streams one token per update, and forwarding those
 verbatim buries the wire under hundreds of single-word SSE frames.
 
+### Cancellation
+
+`CancelTask` has a stricter contract than it looks
+(`@a2a-js/sdk/dist/server/index.js`, `cancelTask`): the handler calls `executor.cancelTask`,
+then drains the event bus until the task is terminal, and finally **requires the stored state to
+be `CANCELED`**. Anything else — including a perfectly normal `COMPLETED` — comes back to the
+caller as `-32002 TASK_NOT_CANCELABLE`. So an executor that merely forwards the cancel and lets
+the turn finish looks broken from outside.
+
+Two things follow, and the bridge does both:
+
+- **A cancel can arrive before there is a session to cancel.** The first event must be `task`,
+  which is published before the adapter is acquired, so a client that reacts to that first frame
+  gets in while `spawn` + `initialize` + `session/new` are still running — several seconds.
+  `cancelTask` therefore records the task id as well as sending the notification, and `execute`
+  checks that flag after acquiring the runtime and stops before prompting.
+- **An ACP turn may end `end_turn` despite the cancel.** The bridge publishes the artifact anyway
+  and then reports `CANCELED`, because the client asked to cancel a task that was still running
+  and is owed that answer.
+
+In ACP the cancel itself is a notification, not a request: `session/cancel` is sent, the updates
+keep arriving, and the turn closes with `stopReason: 'cancelled'`.
+
 ### Permissions
 
 The calling A2A client is **not** a trusted party. An agent that approves the actions of the task
@@ -184,6 +207,8 @@ On the ACP side, verified the same way:
   life of the process. `echo '…' | codex-acp` prints nothing and exits 0.
 - **Claude validates `cwd`** on `session/new`: absolute, exists, is a directory, three distinct
   errors. Codex does not.
+- **`CancelTask` insists on `CANCELED` in the store,** not merely on the executor having been
+  told; see the cancellation section above.
 - **Codex only ever returns `end_turn` or `cancelled`.** `refusal`, `max_tokens` and
   `max_turn_requests` exist in its schema but are never produced, and a terminal failure comes
   back as `end_turn` — which is why failed tool calls are counted separately.

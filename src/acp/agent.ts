@@ -120,14 +120,34 @@ const describeError = (err: unknown): string => {
 
 class AcpExecutor implements AgentExecutor {
   private readonly runtimeByTask = new Map<string, AcpRuntime>();
+  private readonly cancelled = new Set<string>();
 
   constructor(private readonly registry: AcpRegistry) {}
 
+  /**
+   * The SDK awaits this, then drains the bus until the task is terminal and insists the
+   * stored state is CANCELED — anything else comes back to the caller as
+   * `-32002 TASK_NOT_CANCELABLE`. So the flag matters as much as the notification: a
+   * cancel can arrive while the adapter is still starting, seconds before there is a
+   * session to cancel, and dropping it there is what made this look broken.
+   */
   cancelTask = async (taskId: string): Promise<void> => {
-    console.log(`  ↯ cancellation requested for task ${taskId}`);
+    this.cancelled.add(taskId);
+    const runtime = this.runtimeByTask.get(taskId);
+
+    if (!runtime) {
+      console.log(`  ↯ cancel ${taskId.slice(0, 8)}: no session yet — execute() will stop before prompting`);
+      return;
+    }
+
     // In ACP cancelling is a notification, not a request: the turn keeps streaming and
     // ends with stopReason 'cancelled', which `turn()` maps to TASK_STATE_CANCELED.
-    await this.runtimeByTask.get(taskId)?.notifyCancel();
+    console.log(`  ↯ cancel ${taskId.slice(0, 8)}: session/cancel → ${runtime.sessionId.slice(0, 8)}`);
+    try {
+      await runtime.notifyCancel();
+    } catch (err) {
+      console.log(`  ↯ cancel ${taskId.slice(0, 8)}: notification failed — ${describeError(err)}`);
+    }
   };
 
   async execute(ctx: RequestContext, bus: ExecutionEventBus): Promise<void> {
@@ -180,6 +200,24 @@ class AcpExecutor implements AgentExecutor {
         return;
       }
 
+      // A cancel that landed while the adapter was starting: there was no session to send
+      // it to, so it is honoured here instead of being lost.
+      if (this.cancelled.has(taskId)) {
+        console.log('  ⤷ cancelled before the prompt was sent');
+        terminal = true;
+        bus.publish(
+          AgentEvent.statusUpdate(
+            statusUpdate(
+              taskId,
+              contextId,
+              TaskState.TASK_STATE_CANCELED,
+              agentMessage(taskId, contextId, [textPart('Cancelled before the request reached the agent.')]),
+            ),
+          ),
+        );
+        return;
+      }
+
       const current = runtime;
       terminal = await current.run(() => this.turn(current, taskId, contextId, bus, text));
     } catch (err) {
@@ -198,6 +236,7 @@ class AcpExecutor implements AgentExecutor {
       );
     } finally {
       this.runtimeByTask.delete(taskId);
+      this.cancelled.delete(taskId);
       if (terminal) runtime?.openTasks.delete(taskId);
     }
   }
@@ -349,6 +388,7 @@ class AcpExecutor implements AgentExecutor {
     const answer = chunks.join('').trim();
     const failedTools = tools.filter((t) => t.status === 'failed');
     const denials = runtime.takeDenials();
+    const cancelRequested = this.cancelled.has(taskId);
 
     if (stopReason === 'cancelled') {
       // Two different things end a turn this way: an A2A CancelTask, or our own classifier
@@ -398,6 +438,18 @@ class AcpExecutor implements AgentExecutor {
       metadata: undefined,
     };
     bus.publish(AgentEvent.artifactUpdate(artifactEvent));
+
+    // The turn ran to its end, but a cancel was asked for and acted on while it was still
+    // running — the SDK only clears CancelTask if the stored state ends up CANCELED, and
+    // the caller is owed that answer. The artifact goes out first, so the work that did
+    // happen is not thrown away with the status.
+    if (cancelRequested) {
+      console.log('  ⤷ cancelled, though the agent had already finished the turn');
+      return finish(
+        TaskState.TASK_STATE_CANCELED,
+        'Cancelled. The agent had already finished this turn — its answer is in the artifact.',
+      );
+    }
 
     // `max_tokens` and `max_turn_requests` are ceilings, not errors — the turn did end,
     // so the task completes and the reason travels in the data part. Only Claude sends
