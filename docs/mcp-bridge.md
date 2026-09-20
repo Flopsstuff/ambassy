@@ -27,8 +27,8 @@ endpoint and renaming the agent mints no new token.
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `a2a_ask` | `text`, `contextId?`, `agent?` | Sends a request and blocks until the task is terminal, streaming progress |
-| `a2a_task` | `taskId`, `agent?` | Reads a task back, with its state and artifacts |
+| `a2a_ask` | `text`, `contextId?`, `taskId?`, `agent?` | Sends a request and blocks until the task is terminal, streaming progress |
+| `a2a_task` | `taskId`, `agent?` | Reads a task back, with its state, its artifacts and the agent's last word |
 | `a2a_cancel` | `taskId`, `agent?` | Asks the agent to stop |
 | `a2a_card` | `agent?` | The agent card as published |
 
@@ -39,6 +39,16 @@ it looks: the ACP bridge keeps one adapter process and one session per `contextI
 same `contextId` back is what makes the agent remember the previous turn. A fresh `contextId`
 starts a fresh session with a fresh sandbox.
 
+Both are arguments of `a2a_ask`, and the pair is not decoration:
+
+- **`taskId` continues that task.** `INPUT_REQUIRED` is non-terminal — the task stays open with its
+  history, and A2A continues it by sending the next message *with the same task id*. Answering with
+  the context alone opens a **second** task instead, which leaves the first one parked forever; with
+  the ACP bridge behind it, parked also means an adapter process kept alive for a question nobody is
+  going to answer. The result of an interrupted turn therefore names the task id to reply into.
+- **Omitting `taskId` starts new work in the same conversation.** That is a different, equally real
+  intention: a fresh task, the agent's session and memory intact.
+
 ### Generic tools, not one per skill
 
 Projecting the card's `skills[]` into a tool each sounds better than a single free-text entry
@@ -47,6 +57,43 @@ so the projection would yield one tool taking one string — the same thing, wit
 
 The general version of that idea is being specified as *client-directed skill selection* for A2A
 v1.1. A private dialect of it now would have to be unpicked later.
+
+## How a turn can end
+
+A stream is not a single answer, and "what state is the task in" is a different question from "did
+this turn reach an ending at all". `a2a_ask` reports both: the A2A state, and one of four outcomes.
+
+| Outcome | What happened | `isError` |
+|---|---|---|
+| `task` | The task reached a terminal state — `COMPLETED`, `FAILED`, `CANCELED` or `REJECTED` | only for the last three |
+| `message` | The agent answered with a Message and opened no task. A complete answer in A2A | no |
+| `interrupted` | `INPUT_REQUIRED` or `AUTH_REQUIRED`: alive, and waiting on the caller | no — the result says what to do |
+| `truncated` | The stream stopped before any of those. A turn that lost its ending | yes |
+
+`truncated` is the one that has to exist. A stream that dies after a `WORKING` update leaves a
+perfectly well-formed result saying the agent "finished in `TASK_STATE_WORKING`", and an empty
+stream one saying it finished in `TASK_STATE_UNSPECIFIED`. Neither is a failure the caller can
+see without being told, so both are errors here, and both carry the task id to recover from.
+
+Failed and cancelled work keeps whatever it produced. Cancelling late does not unmake an artifact,
+and the ACP bridge deliberately publishes its answer before reporting `CANCELED`.
+
+### The agent's last word
+
+The reason a task failed or was refused usually travels in its final **status message**, not in an
+artifact — that is where the ACP bridge puts a permission refusal (`Refused by the bridge: …`) and
+where an authentication error surfaces. So the latest status message is retained through the turn
+and reported by both `a2a_ask` and `a2a_task`; without it a denial is invisible unless the caller
+happened to be watching progress notifications.
+
+### Artifacts are aggregated, not concatenated
+
+Artifacts arrive in pieces keyed by `artifactId`, and `append` says whether a piece extends the
+previous one or replaces it. Concatenating everything regardless merges artifacts that were never
+the same artifact, and turns two replacements of one artifact — `old`, then `new` — into `oldnew`.
+So updates are aggregated by id, `append: false` replaces, artifacts already present in the task
+snapshot are kept (they are the earlier turns of the conversation), and every data part survives:
+one artifact may carry several, and a later one is not a correction of the first.
 
 ## Why a call may simply block
 
@@ -89,6 +136,38 @@ Two details that are easy to get wrong:
 Progress may only be sent when the caller supplied a `progressToken` in the request's `_meta`.
 Whether a given client does is logged on every call as `mcp.ask { hasProgressToken }`, because the
 whole scheme depends on it.
+
+## Everything else gets a deadline too
+
+The silence gate covers `a2a_ask` and nothing else, which left the other three tools able to wait
+forever on a server that accepted the connection and then said nothing. Two limits close that:
+
+- **`MCP_DISCOVERY_TIMEOUT_MS`** (20 s) bounds fetching the agent card and negotiating a transport.
+- **`MCP_REQUEST_TIMEOUT_MS`** (30 s) bounds one request/response call — `a2a_task`, `a2a_cancel`,
+  `a2a_card`.
+
+Discovery is bounded *separately*, and that is the interesting part. The handshake is cached per
+agent, so several tool calls wait on the same promise — which means the abort of one of them must
+not be passed down into it. A caller's signal therefore ends only that caller's wait, while the
+deadline belongs to the handshake and ends it for everyone. A tool call that is cancelled while the
+card is in flight settles at once; the caller that is still waiting goes on to get its answer from
+the same handshake. Verified both ways round.
+
+## When a call does not survive
+
+Interrupting an `a2a_ask` — a client that hangs up, a silence timeout, a broken stream — does **not**
+stop the agent. Disconnecting from an A2A stream is not a cancellation; the task keeps running, and
+stopping it takes an explicit `a2a_cancel`. Whether that is what you want is the caller's decision,
+so the bridge makes the handle available rather than deciding for them:
+
+- **The first progress notification carries the identity**, task id and context id in full, so a
+  caller watching progress has a handle from the first frame rather than after the answer.
+- **Errors carry it too.** A silence timeout, a broken stream and a truncated turn all report the
+  agent, task and context, plus the two calls that reach the work: `a2a_task` and `a2a_cancel`.
+- **A caller that hung up reads nothing we return**, so the identity goes to `calls.jsonl` instead,
+  as `mcp.ask.abandoned { agent, taskId, contextId, reason }` (`a2a.ask.broken` records the stream
+  side of the same event). For a request that brought no progress token and is no longer listening,
+  that log line is the only correlation left.
 
 ## Authentication
 

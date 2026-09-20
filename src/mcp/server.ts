@@ -27,7 +27,7 @@ import type { Request, Response } from 'express';
 
 import { openLogs } from '../acp/log.ts';
 import { VERSION } from '../version.ts';
-import { A2APool } from './a2a.ts';
+import { A2APool, DEFAULT_DISCOVERY_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS } from './a2a.ts';
 import { bearerGuard, mintToken, persistToken } from './auth.ts';
 import { registerTools } from './tools.ts';
 
@@ -46,6 +46,11 @@ const PORT = Number(process.env.MCP_PORT || 41243);
 const HOST = process.env.MCP_HOST || '127.0.0.1';
 const HEARTBEAT_MS = Number(process.env.MCP_HEARTBEAT_MS || 60_000);
 const SILENCE_MS = Number(process.env.MCP_UPSTREAM_SILENCE_MS || 600_000);
+// The silence gate covers `a2a_ask` and nothing else, so the operations that do not stream
+// need deadlines of their own. Discovery is separate from the calls that follow it because
+// it is shared: it is a handshake several callers wait on, not one caller's request.
+const DISCOVERY_MS = Number(process.env.MCP_DISCOVERY_TIMEOUT_MS || DEFAULT_DISCOVERY_TIMEOUT_MS);
+const REQUEST_MS = Number(process.env.MCP_REQUEST_TIMEOUT_MS || DEFAULT_REQUEST_TIMEOUT_MS);
 const A2A_URL = process.env.A2A_URL || 'http://localhost:41241/';
 const A2A_AGENTS = process.env.A2A_AGENTS ?? '';
 const ALLOWED_HOSTS = (process.env.MCP_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean);
@@ -77,7 +82,7 @@ const token = pinned || mintToken();
 if (!pinned) persistToken(TOKEN_FILE, token);
 
 const logs = openLogs({ dir: LOG_DIR, maxBytes: LOG_MAX_BYTES, maxFiles: LOG_MAX_FILES });
-const pool = new A2APool({ agents, logs });
+const pool = new A2APool({ agents, logs, discoveryTimeoutMs: DISCOVERY_MS, requestTimeoutMs: REQUEST_MS });
 
 // --- HTTP ---
 
