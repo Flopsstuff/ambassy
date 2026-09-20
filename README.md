@@ -112,33 +112,16 @@ Copy `.env.example` to `.env` for the rest: where the agent may work, what it is
 (`AGENT_NAME` names it in both the Agent Card and the MCP `serverInfo`), and how long an idle
 conversation lives. By default each conversation gets its own directory under `.acp-sandboxes/`.
 
-## Files
-
-| File | What it demonstrates |
-|---|---|
-| `src/agent.ts` | A2A server: Agent Card, transports, port — the bootstrap around the executor |
-| `src/revisor.ts` | The stub executor itself: text statistics, streamed status updates, `INPUT_REQUIRED`, artifacts |
-| `src/client.ts` | Card-based discovery, `sendMessageStream`, resuming a task, `getTask` |
-| `src/proxy.ts` | Wire-tap: raw JSON-RPC requests and SSE frames |
-| `src/raw.sh` | The same protocol over curl: discovery → version negotiation → send → stream → get |
-| `src/acp/agent.ts` | The same A2A server with a real coding agent behind it: backend, handshake, card |
-| `src/acp/executor.ts` | The translation itself: ACP updates become A2A events, and a `stopReason` becomes a `TaskState` |
-| `src/acp/client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
-| `src/acp/sandbox.ts` | Where a conversation may work, and why `owned` is asserted rather than inferred |
-| `src/acp/permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
-| `src/acp/log.ts` | Two rotating JSON Lines logs: outward calls with the token budget, and the agent's own work |
-| `src/mcp/server.ts` | The MCP endpoint: bearer guard, one server per request, tools over Streamable HTTP |
-| `src/mcp/a2a.ts` | The pool of A2A clients the tools call, and how a turn is flattened into a result |
-| `bin/ambassyctl` | Installs and drives both processes as services; `service/` holds the unit templates |
-| `tests/` | Vitest suites mirroring `src/`: the classifier, the translation, rotation, the heartbeat |
-
 ## Documentation
 
-Longer prose lives in [`docs/`](docs/README.md): [architecture](docs/architecture.md),
-[the A2A side](docs/a2a.md), [the ACP bridge](docs/acp-bridge.md),
-[the MCP bridge](docs/mcp-bridge.md), [permissions](docs/permissions.md),
-[running as a service](docs/service.md), [configuration](docs/configuration.md),
-[logging](docs/logging.md) and [troubleshooting](docs/troubleshooting.md).
+**<https://flopsstuff.github.io/ambassy/>** — the same pages as in [`docs/`](docs/README.md),
+rendered: [architecture](docs/architecture.md), [the A2A side](docs/a2a.md),
+[the ACP bridge](docs/acp-bridge.md), [the MCP bridge](docs/mcp-bridge.md),
+[permissions](docs/permissions.md), [running as a service](docs/service.md),
+[configuration](docs/configuration.md), [logging](docs/logging.md),
+[the tests](docs/testing.md) and [troubleshooting](docs/troubleshooting.md).
+
+Which file does what is in [the source layout](docs/README.md#source-layout).
 
 `AGENTS.md` is the terse version of all of it, for an agent working in this repository.
 
