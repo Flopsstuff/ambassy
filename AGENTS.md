@@ -20,6 +20,7 @@ yarn agent:codex   # ditto, with Codex instead of Claude
 yarn client        # SDK client: two-turn conversation with streaming
 yarn raw           # the same protocol over bare curl, no SDK
 yarn tap           # wire-tap proxy :41242 → :41241
+yarn mcp           # MCP endpoint on :41243 fronting the A2A agent, for a calling agent
 ```
 
 All three servers listen on the same port and serve the same protocol, so `client`, `raw` and
@@ -211,6 +212,30 @@ Worth stating plainly, because the classifier looks stronger than it is:
   not in the temp tree — otherwise conversations could write into each other unobserved.
 - **Symlinks planted inside the root after the check are not followed.** Paths are resolved once,
   which is enough for `/var` vs `/private/var` but not for an adversary.
+
+## The MCP bridge
+
+`src/mcp/` publishes the A2A agent to a calling agent (Claude Code) as four tools — `a2a_ask`,
+`a2a_task`, `a2a_cancel`, `a2a_card` — over Streamable HTTP. It is an A2A **client**: it never
+imports `src/acp/`, and reaches the agent over the network, so `A2A_URL` can point anywhere.
+
+`yarn mcp` mints a bearer token, writes it to `.mcp-token` (mode 600, gitignored), prints it, and
+prints the command that connects a client. `MCP_TOKEN` pins it across restarts.
+
+Three decisions worth knowing before changing anything there:
+
+- **Calls block until the task is terminal.** A client backgrounds a tool call that runs past two
+  minutes and notifies on completion, so a handle-and-poll protocol would duplicate that — and the
+  recovery path already exists as `a2a_task` with the real task id, because the task lives on the
+  agent, not in this bridge.
+- **The heartbeat is derived from liveness, not from a timer.** Progress notifications keep the
+  client's five-minute idle window open, but ticking unconditionally would hide a wedged agent
+  until the wall-clock limit (~28h). After `MCP_UPSTREAM_SILENCE_MS` without an upstream event the
+  turn is aborted with an error. The gate must abort the stream, not merely record its verdict.
+- **No `skills[]` projection.** The card declares one generic skill, so projecting it would yield
+  one generic tool. Client-directed skill selection is being specified for A2A v1.1.
+
+Full write-up: [docs/mcp-bridge.md](docs/mcp-bridge.md).
 
 ## Protocol invariants
 

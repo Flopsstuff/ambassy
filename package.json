@@ -10,7 +10,8 @@
     "agent:codex": "ACP_AGENT=codex tsx src/acp/agent.ts",
     "client": "tsx src/client.ts",
     "tap": "tsx src/proxy.ts",
-    "raw": "./src/raw.sh"
+    "raw": "./src/raw.sh",
+    "mcp": "tsx src/mcp/server.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,9 @@
     "@agentclientprotocol/claude-agent-acp": "^0.79.0",
     "@agentclientprotocol/codex-acp": "^1.12.0",
     "@agentclientprotocol/sdk": "^1.4.0",
+    "@modelcontextprotocol/express": "2.0.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "express": "^5.2.1",
     "zod": "^4.6.5"
   },
