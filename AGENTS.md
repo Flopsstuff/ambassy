@@ -22,6 +22,7 @@ yarn raw           # the same protocol over bare curl, no SDK
 yarn tap           # wire-tap proxy :41242 → :41241
 yarn mcp           # MCP endpoint on :41243 fronting the A2A agent, for a calling agent
 yarn service       # install and drive the whole thing as a background service
+yarn typecheck     # tsc --noEmit with the flags that stand in for tsconfig.json
 ```
 
 All three servers listen on the same port and serve the same protocol, so `client`, `raw` and
@@ -115,6 +116,23 @@ and binds a port), `src/client.ts` and `src/proxy.ts`, `AcpRegistry.acquire`/`ha
 End-to-end verification is unchanged and still worth running: `yarn client` against a live agent,
 checking the cycle `SUBMITTED → INPUT_REQUIRED → WORKING → artifact → COMPLETED`.
 Full write-up: [docs/testing.md](docs/testing.md).
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs `yarn typecheck` and `yarn test` on every push and every pull
+request. The typecheck is there because there is no build step: `tsx` transpiles and throws the
+types away, so nothing checks them unless something asks, and the flags that would live in a
+`tsconfig.json` live in that script instead. It is expected to pass — the tree is at zero
+diagnostics — so a new one is a regression rather than a number to compare against.
+
+`.github/workflows/docs.yml` publishes `docs/` to GitHub Pages through the same Jekyll that Pages
+runs anyway, so the site is the Markdown in this repository rather than a second copy of it. It
+needs Pages set to "GitHub Actions" in the repository settings; the workflow cannot turn that on
+by itself.
+
+Corepack is enabled before the install, because that is what resolves the Yarn version pinned in
+`packageManager`. `setup-node`'s cache is deliberately not used: it reaches for the Yarn 1 shim on
+the runner and asks it about a Berry cache folder, which is global here anyway.
 
 ## Architecture
 

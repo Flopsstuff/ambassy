@@ -1,0 +1,13 @@
+# Jekyll's share of publishing docs/ — deliberately four settings and no site to maintain.
+title: Ambassy
+description: A learning sandbox for the A2A protocol, and a bridge from it to a real coding agent.
+theme: jekyll-theme-primer
+
+# The documents link to each other as files — [permissions](permissions.md) — because they
+# are read in the repository as often as on the web. This rewrites those links to the
+# rendered pages, so one set of links works in both places.
+plugins:
+  - jekyll-relative-links
+relative_links:
+  enabled: true
+  collections: false
