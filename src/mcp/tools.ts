@@ -336,10 +336,10 @@ export const registerTools = (mcp: McpServer, opts: ToolOptions): void => {
     },
     async ({ taskId, agent }, ctx: ServerContext): Promise<CallToolResult> => {
       try {
-        const task = await pool.cancel(agent, taskId, ctx.mcpReq.signal);
-        const lines = [`Task ${task.taskId} is now ${TaskState[task.state]}.`];
-        if (task.status) lines.push(task.status);
-        return { content: [text(lines.join('\n\n')), json({ ...envelopeOf(task), state: TaskState[task.state] })] };
+        // Rendered exactly as a read is, because cancelling late does not unmake the work:
+        // the ACP bridge publishes its artifact before it reports `CANCELED`, and a caller
+        // that stopped a task should not have to fetch it again to see what it produced.
+        return renderTask(await pool.cancel(agent, taskId, ctx.mcpReq.signal));
       } catch (err) {
         return asToolFailure(err);
       }
