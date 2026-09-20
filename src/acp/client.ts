@@ -143,10 +143,18 @@ const connect = (backend: Backend, cwd: string, supervise: () => Supervision): C
   return { child, conn };
 };
 
-/** Both adapters exit on stdin EOF, so closing the pipe is the polite way out. */
+/**
+ * Both adapters exit on stdin EOF, so closing the pipe is the polite way out.
+ *
+ * `error` counts as an ending too: a child that never spawned — a missing binary — emits
+ * no `exit`, and waiting for one would hang the caller cleaning up after it.
+ */
 const stop = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise<void>((done) => child.once('exit', () => done()));
+  const exited = new Promise<void>((done) => {
+    child.once('exit', () => done());
+    child.once('error', () => done());
+  });
   child.stdin.end();
   const executioner = setTimeout(() => child.kill('SIGKILL'), 3000);
   executioner.unref();
@@ -369,6 +377,9 @@ export class AcpRegistry {
     const started = Date.now();
     const { child, conn } = connect(backend, boundary.root, () => ({
       boundary,
+      // Stated, not guessed: `superviseMode` below refuses to return unless the session
+      // is in this mode, so by the time a permission request arrives it is the truth.
+      supervisedModeId: backend.supervisedModeId,
       onDeny: (summary) => state.denials.push(summary),
       log: (event, fields) => logs.work(event, { contextId, taskId: state.taskId ?? null, ...fields }),
     }));
@@ -381,56 +392,87 @@ export class AcpRegistry {
       ownedRoot: boundary.owned,
     });
 
-    await conn.agent.request(acp.methods.agent.initialize, {
-      protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: CLIENT_CAPABILITIES,
-      clientInfo: { name: CLIENT_NAME, version: '0.1.0' },
-    });
+    // From the spawn onward the child is ours to clean up. A start that fails halfway
+    // otherwise leaves a live adapter holding the sandbox open and — where it was the
+    // supervised mode that could not be set — one that answers its own permission
+    // requests while the registry believes no such conversation exists.
+    let session: ActiveSession | undefined;
+    try {
+      await conn.agent.request(acp.methods.agent.initialize, {
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: CLIENT_CAPABILITIES,
+        clientInfo: { name: CLIENT_NAME, version: '0.1.0' },
+      });
 
-    // `mcpServers` must be present even when empty — its absence is a hard error,
-    // while an empty array is fine.
-    const session = await conn.agent.buildSession({ cwd: boundary.root, mcpServers: [] }).start();
-    const mode = await this.superviseMode(conn, session, contextId);
+      // `mcpServers` must be present even when empty — its absence is a hard error,
+      // while an empty array is fine.
+      session = await conn.agent.buildSession({ cwd: boundary.root, mcpServers: [] }).start();
+      const mode = await this.superviseMode(conn, session, contextId);
 
-    logs.call('session.new', {
-      contextId,
-      sessionId: session.sessionId,
-      cwd: boundary.root,
-      ms: Date.now() - started,
-      mode,
-      availableModes: session.modes?.availableModes.map((m) => m.id) ?? [],
-    });
-
-    const runtime = new Runtime(contextId, boundary, child, conn, session, state);
-    runtime.onExit(() => {
-      if (this.runtimes.get(contextId) === runtime) this.runtimes.delete(contextId);
-      console.log(`  ⨯ ${contextId.slice(0, 8)}: adapter exited`);
-      logs.call('adapter.exit', {
+      logs.call('session.new', {
         contextId,
         sessionId: session.sessionId,
-        code: child.exitCode,
-        signal: child.signalCode,
-        budget: runtime.budget,
+        cwd: boundary.root,
+        ms: Date.now() - started,
+        mode,
+        availableModes: session.modes?.availableModes.map((m) => m.id) ?? [],
       });
-    });
-    this.runtimes.set(contextId, runtime);
-    console.log(`  ⚙ ${contextId.slice(0, 8)}: session ${session.sessionId.slice(0, 8)} ready`);
-    return runtime;
+
+      const ready = session;
+      const runtime = new Runtime(contextId, boundary, child, conn, ready, state);
+      runtime.onExit(() => {
+        if (this.runtimes.get(contextId) === runtime) this.runtimes.delete(contextId);
+        console.log(`  ⨯ ${contextId.slice(0, 8)}: adapter exited`);
+        logs.call('adapter.exit', {
+          contextId,
+          sessionId: ready.sessionId,
+          code: child.exitCode,
+          signal: child.signalCode,
+          budget: runtime.budget,
+        });
+      });
+      this.runtimes.set(contextId, runtime);
+      console.log(`  ⚙ ${contextId.slice(0, 8)}: session ${ready.sessionId.slice(0, 8)} ready`);
+      return runtime;
+    } catch (err) {
+      console.log(`  ⨯ ${contextId.slice(0, 8)}: adapter start failed, stopping it`);
+      logs.call('adapter.failed', {
+        contextId,
+        backend: backend.id,
+        pid: child.pid ?? null,
+        sessionId: session?.sessionId ?? null,
+        ms: Date.now() - started,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      session?.dispose();
+      conn.close();
+      await stop(child);
+      throw err;
+    }
   }
 
-  /** Put the session into the mode where the adapter asks us before it acts. */
+  /**
+   * Put the session into the mode where the adapter asks us before it acts.
+   *
+   * A mode that cannot be established ends the session. Logging the miss and prompting
+   * anyway leaves the adapter in whichever mode it chose, and for both backends the
+   * default is one where it approves its own tool calls: the bridge would go on reporting
+   * a supervision it is no longer performing.
+   */
   private async superviseMode(
     conn: ClientConnection,
     session: ActiveSession,
     contextId: string,
-  ): Promise<string | null> {
+  ): Promise<string> {
     const wanted = this.opts.backend.supervisedModeId;
     const modes = session.modes;
     const available = modes?.availableModes.map((m) => m.id) ?? [];
 
     if (!modes || !available.includes(wanted)) {
-      console.log(`  ⚙ ${contextId.slice(0, 8)}: mode '${wanted}' not offered (have: ${available.join(', ') || 'none'})`);
-      return modes?.currentModeId ?? null;
+      throw new Error(
+        `${this.opts.backend.bin} does not offer the supervised mode '${wanted}' ` +
+          `(offered: ${available.join(', ') || 'none'}); refusing to prompt unsupervised`,
+      );
     }
     if (modes.currentModeId === wanted) return wanted;
 

@@ -178,6 +178,7 @@ able to take the bridge down.
 | `handshake`, `handshake.failed` | the startup probe: agent name and version, protocol version, auth methods |
 | `adapter.spawn` | pid, backend, cwd, whether the root is ours |
 | `session.new` | session id, cwd, the mode settled on, how long it took |
+| `adapter.failed` | a start that got no further — the stage it died at, the adapter stopped again |
 | `task.start`, `task.input_required` | the A2A side, for correlation |
 | `prompt.start`, `prompt.stop` | duration, `stopReason`, tool counts, refusals, **`usage` and the running `budget`** |
 | `task.cancel`, `task.failed`, `task.finish` | how the task ended, with the budget |
@@ -209,10 +210,11 @@ That classifier is a placeholder for an external channel — a human, a policy, 
 agent — which is why it is one function behind one export.
 
 Its rules: read/search/think pass; edit/delete/move pass only if every path is inside the session
-root; execute/fetch/other pass only when the root is a directory the bridge created itself. The
-answer must be an `optionId` **from the list the agent offered** — inventing one makes Claude fail
-the whole turn with `Permission option was not offered`, and makes Codex silently downgrade it to
-a cancel.
+root; execute/fetch/other pass only when the root is a directory the bridge created itself;
+`switch_mode` passes only back into the supervised mode, because owning the directory says nothing
+about a call asking for the classifier to be switched off. The answer must be an `optionId` **from
+the list the agent offered** — inventing one makes Claude fail the whole turn with `Permission
+option was not offered`, and makes Codex silently downgrade it to a cancel.
 
 **A sandbox is never named after the conversation.** `contextId` is text the A2A caller chose, and
 joining it onto `.acp-sandboxes/` made `..` resolve to the repository root — returned `owned: true`,
@@ -230,6 +232,10 @@ the decision somewhere else — and both were caught doing it:
   answers instead of the client. Under it Codex overwrote a file two directories above its own
   root without asking. Fixed by selecting `read-only` — a name about approvals, not about writing:
   inside the workspace it still edits freely.
+
+A mode that cannot be established fails the session rather than being noted and passed over, and
+the half-started adapter is stopped with it: an adapter left in its own default answers its own
+permission requests, and the bridge would go on claiming a supervision it is not performing.
 
 ### What this does not protect against
 

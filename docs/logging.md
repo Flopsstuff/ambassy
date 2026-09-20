@@ -23,6 +23,7 @@ hide it behind transports and levels without making it more correct here.
 | `handshake`, `handshake.failed` | the startup probe: agent name and version, protocol version, auth methods, capabilities |
 | `adapter.spawn` | pid, backend, cwd, whether the root is ours |
 | `session.new` | session id, cwd, the mode settled on, available modes, duration |
+| `adapter.failed` | a start that got no further: which stage it died at, and the adapter stopped again |
 | `task.start` | `resuming`, request length |
 | `task.input_required` | the task parked awaiting input |
 | `prompt.start` | session id, request length |

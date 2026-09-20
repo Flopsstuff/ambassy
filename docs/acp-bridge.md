@@ -65,6 +65,12 @@ it:
 
 The two vocabularies do not overlap, so the mode is a per-backend constant in `BACKENDS`.
 
+A mode that cannot be established ends the session, and the half-started adapter is stopped along
+with it. The alternative — noting the miss and prompting anyway — leaves the adapter in whichever
+mode it chose, which for both backends is one where it answers its own permission requests, while
+the bridge goes on reporting a supervision it is no longer performing. The failure is recorded as
+`adapter.failed`.
+
 ## Event mapping
 
 | ACP | A2A |

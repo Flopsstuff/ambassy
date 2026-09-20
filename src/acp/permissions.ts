@@ -13,7 +13,7 @@
  */
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   RequestError,
   type PermissionOption,
@@ -42,6 +42,11 @@ export interface Boundary {
 /** Everything a handler needs besides the request itself. */
 export interface Supervision {
   boundary: Boundary;
+  /**
+   * The session mode the bridge settled on, so a request to leave it can be recognised.
+   * Absent where no session exists yet — the startup probe never prompts.
+   */
+  supervisedModeId?: string;
   /** Records a refusal so the turn can tell the A2A client why it ended the way it did. */
   onDeny?: (summary: string) => void;
   log?: (event: string, fields: Fields) => void;
@@ -85,10 +90,30 @@ const realise = (target: string): string => {
  */
 export const insideRoot = (root: string, target: string): boolean => {
   const rel = relative(root, realise(resolve(root, target)));
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  if (rel === '') return true;
+  if (isAbsolute(rel)) return false;
+  // Only a climb out counts. Testing `startsWith('..')` alone also refuses ordinary
+  // children whose names merely begin with two dots — `..notes` is a file, not a parent.
+  return rel !== '..' && !rel.startsWith(`..${sep}`);
 };
 
-const classify = (toolCall: ToolCallUpdate, boundary: Boundary): Verdict => {
+/**
+ * The mode a `switch_mode` call is asking for, where the adapter makes it visible.
+ *
+ * `rawInput` is whatever the agent sent, so this reads it defensively and treats an
+ * unreadable shape as "no target" rather than guessing one.
+ */
+const proposedMode = (toolCall: ToolCallUpdate): string | null => {
+  const raw = toolCall.rawInput;
+  if (typeof raw !== 'object' || raw === null) return null;
+  for (const key of ['modeId', 'mode', 'currentModeId']) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+};
+
+const classify = (toolCall: ToolCallUpdate, { boundary, supervisedModeId }: Supervision): Verdict => {
   const kind: ToolKind = toolCall.kind ?? 'other';
   const locations = toolCall.locations ?? [];
 
@@ -114,10 +139,26 @@ const classify = (toolCall: ToolCallUpdate, boundary: Boundary): Verdict => {
         : { allow: false, reason: `${kind} escapes the root: ${escaping.map((l) => l.path).join(', ')}` };
     }
 
+    case 'switch_mode': {
+      // Owning the directory decides nothing here. The mode is what makes the adapter ask
+      // at all, so a switch out of it is a request to stop being supervised — and that is
+      // the bridge's decision, not the agent's.
+      const wanted = proposedMode(toolCall);
+      if (supervisedModeId && wanted === supervisedModeId) {
+        return { allow: true, reason: `switch_mode stays in the supervised mode '${wanted}'` };
+      }
+      return {
+        allow: false,
+        reason: wanted
+          ? `switch_mode to '${wanted}' would leave the supervised mode ${supervisedModeId ?? '(unknown)'}`
+          : 'switch_mode without a readable target mode cannot be checked',
+      };
+    }
+
     default:
-      // execute, fetch, switch_mode, other — effects we cannot inspect from a tool
-      // call alone. The rule is one sentence long on purpose: a shell runs only in a
-      // directory that belongs to us.
+      // execute, fetch, other — effects we cannot inspect from a tool call alone. The
+      // rule is one sentence long on purpose: a shell runs only in a directory that
+      // belongs to us.
       if (boundary.owned) return { allow: true, reason: `${kind} allowed: the root is our own sandbox` };
       if (boundary.allowExecute) return { allow: true, reason: `${kind} allowed: ACP_ALLOW_EXECUTE is set` };
       return { allow: false, reason: `${kind} is unverifiable and the root was handed to us, not created by us` };
@@ -148,9 +189,10 @@ const pickOption = (options: PermissionOption[], allow: boolean): PermissionOpti
 
 export const decidePermission = (
   params: RequestPermissionRequest,
-  { boundary, onDeny, log }: Supervision,
+  supervision: Supervision,
 ): RequestPermissionResponse => {
-  const verdict = classify(params.toolCall, boundary);
+  const { onDeny, log } = supervision;
+  const verdict = classify(params.toolCall, supervision);
   const title = params.toolCall.title ?? params.toolCall.toolCallId;
   const kind = params.toolCall.kind ?? 'other';
   const option = pickOption(params.options, verdict.allow);

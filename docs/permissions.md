@@ -50,11 +50,18 @@ exists.
 | `read`, `search`, `think` | allow — nothing changes |
 | `edit`, `delete`, `move` with locations | allow if every path resolves inside the root |
 | `edit`, `delete`, `move` without locations | allow only if the root is ours — there is nothing to check |
-| `execute`, `fetch`, `switch_mode`, `other` | allow only if the root is ours, or `ACP_ALLOW_EXECUTE=true` |
+| `switch_mode` | allow only back into the supervised mode — owning the directory grants nothing here |
+| `execute`, `fetch`, `other` | allow only if the root is ours, or `ACP_ALLOW_EXECUTE=true` |
 
 One sentence covers the last row: **a shell runs only in a directory that belongs to us.** The
 effects of a command cannot be read off the tool call, so the containment has to come from the
 directory rather than from inspection.
+
+`switch_mode` is the exception to that sentence, and it sits in its own row for a reason. The
+session mode is what makes the adapter ask at all, so a call proposing to leave it is a call
+asking for the classifier to be switched off — owning the directory says nothing about that. The
+proposed mode is read from the tool call's `rawInput` where the adapter makes it visible; a target
+that cannot be read is refused rather than guessed.
 
 Path containment resolves symlinks as far as the path exists. Without that the check is wrong
 before it is ever attacked: on macOS `os.tmpdir()` answers `/var/folders/…`, a symlink to
