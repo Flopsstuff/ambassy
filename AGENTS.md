@@ -125,10 +125,14 @@ types away, so nothing checks them unless something asks, and the flags that wou
 `tsconfig.json` live in that script instead. It is expected to pass — the tree is at zero
 diagnostics — so a new one is a regression rather than a number to compare against.
 
-`.github/workflows/docs.yml` publishes `docs/` to GitHub Pages through the same Jekyll that Pages
-runs anyway, so the site is the Markdown in this repository rather than a second copy of it. It
-needs Pages set to "GitHub Actions" in the repository settings; the workflow cannot turn that on
-by itself.
+`.github/workflows/docs.yml` builds `docs/` with VitePress and publishes it to GitHub Pages at
+<https://flopsstuff.github.io/ambassy/>. The site is the Markdown already in the repository rather
+than a second copy of it, and the navigation lives in `docs/.vitepress/config.ts` instead of front
+matter — a page that opens with six lines of `nav_order:` is worse to read in a checkout for the
+sake of being better to read on the web. A new page has to be added to the sidebar there, or it
+ships unreachable. `yarn docs:dev` serves it locally; `yarn docs:build` is what CI runs, and it
+fails on a dead internal link, which is why links out of `docs/` are absolute GitHub URLs. Pages
+must be set to "GitHub Actions" in the repository settings; the workflow cannot turn that on.
 
 Corepack is enabled before the install, because that is what resolves the Yarn version pinned in
 `packageManager`. `setup-node`'s cache is deliberately not used: it reaches for the Yarn 1 shim on

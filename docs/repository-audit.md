@@ -61,7 +61,7 @@ Priority meanings: **P0** = isolation boundary bypass; **P1** = fix before routi
 
 **Status:** Closed by `3ddd7d4`. Directories come from `mkdtemp` under the sandbox parent, with an explicit context-to-directory map and a containment check on reuse; nothing is derived from the context id but the label on the name.
 
-**Location:** [src/acp/client.ts](../src/acp/client.ts), `boundaryFor`, lines 284–301.
+**Location:** [src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), `boundaryFor`, lines 284–301.
 **Evidence:** reproduced, plus live verification that the A2A SDK accepts `contextId: ".."`.
 
 `join(SANDBOX_DIR, contextId.slice(0, 8))` uses untrusted text as a directory name and then marks
@@ -84,9 +84,9 @@ command or write a file outside its disposable fixture.
 
 **Status:** Closed by `3ddd7d4`. The two A2A servers had already gained `HOST` by the time this was acted on; the wire-tap binds it now as well, and `TARGET_HOST` names what it forwards to.
 
-**Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 609–623;
-[src/agent.ts](../src/agent.ts), lines 248–260;
-[src/proxy.ts](../src/proxy.ts), line 58. **Evidence:** source review.
+**Location:** [src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 609–623;
+[src/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/agent.ts), lines 248–260;
+[src/proxy.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/proxy.ts), line 58. **Evidence:** source review.
 
 Both A2A servers call `app.listen(PORT)` without a host while printing a localhost URL.
 The tap does the same. On a machine with reachable network interfaces, callers can reach
@@ -105,9 +105,9 @@ Verify the actual bound address, not just the startup message.
 
 **Status:** Open.
 
-**Location:** [.env.example](../.env.example), lines 20 and 32;
-[src/acp/agent.ts](../src/acp/agent.ts), lines 51–62;
-[src/mcp/server.ts](../src/mcp/server.ts), lines 40–68. **Evidence:** reproduced.
+**Location:** [.env.example](https://github.com/Flopsstuff/ambassy/blob/main/.env.example), lines 20 and 32;
+[src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 51–62;
+[src/mcp/server.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/server.ts), lines 40–68. **Evidence:** reproduced.
 
 The template sets `LOG_DIR=` and `PUBLIC_URL=`. Nullish coalescing preserves empty strings,
 so the logger receives `dir: ""` and throws `ENOENT`. After fixing only that value, the ACP
@@ -124,7 +124,7 @@ and a valid public URL. Test this in isolation without overwriting the operator'
 
 **Status:** Open.
 
-**Location:** [src/acp/client.ts](../src/acp/client.ts), `acquire`, lines 305–364.
+**Location:** [src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), `acquire`, lines 305–364.
 **Evidence:** reproduced with two simultaneous acquisitions and a fake ACP adapter.
 
 The registry is populated only after several awaited startup requests. Both callers can miss
@@ -143,7 +143,7 @@ A failed acquisition can be retried, and shutdown leaves no pending or hidden ch
 
 **Status:** Open. The one piece taken early: `acquire` disposes a half-started adapter, because F08 cannot be honoured without it.
 
-**Location:** [src/acp/client.ts](../src/acp/client.ts), lines 127–135, 250–281, 314–364.
+**Location:** [src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), lines 127–135, 250–281, 314–364.
 **Evidence:** failed acquisition reproduced; missing deadlines found by source review.
 
 If initialize, session creation, or mode selection rejects, `acquire()` has no cleanup block.
@@ -164,8 +164,8 @@ also completes when spawn fails.
 
 **Status:** Open.
 
-**Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 143–161, 199–241;
-[src/acp/client.ts](../src/acp/client.ts), lines 193–214. **Evidence:** reproduced with controlled turns.
+**Location:** [src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 143–161, 199–241;
+[src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), lines 193–214. **Evidence:** reproduced with controlled turns.
 
 Tasks A and B share a runtime; A is running and B is queued. Both are in `runtimeByTask`.
 Canceling B sends ACP's session-wide cancel, which targets A. B passed the cancellation check
@@ -183,8 +183,8 @@ Also cover cancellation during acquisition and a cancel racing normal completion
 
 **Status:** Open.
 
-**Location:** [src/agent.ts](../src/agent.ts), lines 114–118, 137–153;
-[src/acp/agent.ts](../src/acp/agent.ts), lines 143–161, 202–218, 257–263.
+**Location:** [src/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/agent.ts), lines 114–118, 137–153;
+[src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 143–161, 202–218, 257–263.
 **Evidence:** live Revisor reproduction and ACP executor bookkeeping fixture.
 
 After an empty input, `execute()` returns. Both cancel implementations merely set a flag or
@@ -207,7 +207,7 @@ executors and cancellation during startup with empty input.
 
 **Status:** Closed by `3ddd7d4`. A supervised mode that cannot be established fails the session and takes the adapter with it, and `switch_mode` is decided on the option the adapter offered — which is where both adapters put the destination, `rawInput` holding only the plan.
 
-**Location:** [src/acp/client.ts](../src/acp/client.ts), `superviseMode`, lines 367–385.
+**Location:** [src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), `superviseMode`, lines 367–385.
 **Evidence:** reproduced with an adapter offering only `auto`.
 
 When the required mode is unavailable, the bridge logs a message and continues in the current
@@ -226,8 +226,8 @@ Known supported modes continue to work.
 
 **Status:** Closed by `109fb67`. `taskId` runs through the tool schema, the pool and the outgoing message; the result names the task to reply into, and omitting it still opens new work in the same context.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 71–79, 119–143;
-[src/mcp/tools.ts](../src/mcp/tools.ts), lines 54–60, 99–105. **Evidence:** live reproduction.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), lines 71–79, 119–143;
+[src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts), lines 54–60, 99–105. **Evidence:** live reproduction.
 
 `a2a_ask` accepts `contextId` but not `taskId`; every outgoing message has `taskId: ""`.
 Its own response instructs the caller to answer using only `contextId`. Following that advice
@@ -246,8 +246,8 @@ task, and eventually releases its open-task reference. See the specification's
 
 **Status:** Closed by `109fb67`. Identity travels with the first progress notification, with a typed `TurnError` and with the silence timeout; a caller that hung up is recorded as `mcp.ask.abandoned`.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), `AskUpdate` and `ask`;
-[src/mcp/tools.ts](../src/mcp/tools.ts), lines 138–145, 155–158. **Evidence:** source review.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), `AskUpdate` and `ask`;
+[src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts), lines 138–145, 155–158. **Evidence:** source review.
 
 Task IDs are collected only inside the pool's local result. Progress says `task accepted`
 without IDs, and the error path returns only a failure string. If the stream fails after
@@ -267,8 +267,8 @@ recovery path. A silence timeout includes the known agent, task ID, and context 
 
 **Status:** Closed by `109fb67`. `MCP_DISCOVERY_TIMEOUT_MS` bounds the shared handshake and `MCP_REQUEST_TIMEOUT_MS` the three request/response tools; a caller's abort ends only its own wait.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 103–109, 124–125, 184–205;
-[src/mcp/tools.ts](../src/mcp/tools.ts), lines 115–145. **Evidence:** reproduced with stalled HTTP discovery.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), lines 103–109, 124–125, 184–205;
+[src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts), lines 115–145. **Evidence:** reproduced with stalled HTTP discovery.
 
 The abort signal is passed only to `sendMessageStream`, after awaiting `createFromUrl`.
 Aborting while the card request was held open did not settle `ask`; it remained pending until
@@ -286,7 +286,7 @@ tool call indefinitely. Verify the same behavior for each of the four tools and 
 
 **Status:** Closed by `109fb67`. Artifacts aggregate by `artifactId` honouring `append`, seeded from the task snapshot, with every data part kept.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 150–170.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), lines 150–170.
 **Evidence:** reproduced with an injected SDK stream.
 
 Every artifact update is concatenated regardless of `artifactId` and `append`. Two updates
@@ -306,8 +306,8 @@ multiple data parts, and a direct Message response.
 
 **Status:** Closed by `109fb67`. A turn reports an outcome as well as a state, and `truncated` — a stream that stopped before any ending — is an error carrying the recovery identity.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 146–181;
-[src/mcp/tools.ts](../src/mcp/tools.ts), lines 66–69. **Evidence:** reproduced with an injected stream.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), lines 146–181;
+[src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts), lines 66–69. **Evidence:** reproduced with an injected stream.
 
 A stream that ends after a `WORKING` task returns that state normally. `renderAsk` marks only
 `FAILED` and `REJECTED` as errors, so the caller receives an ordinary result saying the agent
@@ -324,8 +324,8 @@ remain supported, and interrupted states tell the caller what action is needed.
 
 **Status:** Closed by `109fb67`. The last status message is retained and reported by `a2a_ask` and `a2a_task`, and `a2a_cancel` renders like a read rather than dropping what the task produced.
 
-**Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 155–162;
-[src/mcp/tools.ts](../src/mcp/tools.ts), lines 46–83. **Evidence:** source review.
+**Location:** [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts), lines 155–162;
+[src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts), lines 46–83. **Evidence:** source review.
 
 Final status text is sent as progress but retained only for `INPUT_REQUIRED`. ACP permission
 refusals and authentication errors delivered as `CANCELED` or `FAILED` status messages therefore
@@ -343,8 +343,8 @@ its text, structured result, and final status explanation.
 
 **Status:** Open.
 
-**Location:** [src/agent.ts](../src/agent.ts), lines 230–240;
-[src/acp/agent.ts](../src/acp/agent.ts), lines 578–588;
+**Location:** [src/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/agent.ts), lines 230–240;
+[src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 578–588;
 [docs/a2a.md](a2a.md), discovery example. **Evidence:** live card and specification check.
 
 Cards declare `text` and `data`. These fields describe media types, so clients negotiating
@@ -360,9 +360,9 @@ the example. See the specification's
 
 **Status:** Open.
 
-**Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 58–62;
-[src/mcp/server.ts](../src/mcp/server.ts), lines 47–68;
-[src/acp/log.ts](../src/acp/log.ts), lines 41–85. **Evidence:** source review.
+**Location:** [src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 58–62;
+[src/mcp/server.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/server.ts), lines 47–68;
+[src/acp/log.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/log.ts), lines 41–85. **Evidence:** source review.
 
 The expected deployment runs both bridges. They use the same default directory and filenames,
 but each process tracks file size independently and renames the same rotation files. Size
@@ -379,7 +379,7 @@ accounted for within each service's documented retention window.
 
 **Status:** Open.
 
-**Location:** [src/acp/log.ts](../src/acp/log.ts), lines 50–60 and 89–92.
+**Location:** [src/acp/log.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/log.ts), lines 50–60 and 89–92.
 **Evidence:** reproduced with an invalid log destination and a non-JSON field.
 
 Directory creation and initial file access are outside error handling. `JSON.stringify` is
@@ -398,9 +398,9 @@ without repeated exceptions or accidental task failure.
 
 **Status:** Partly narrowed by `109fb67`: the two MCP deadlines fall back to their defaults rather than throwing out of `AbortSignal.timeout`, and `ACP_CWD` must now be a directory rather than merely exist. Everything else in this finding stands.
 
-**Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 44–60;
-[src/acp/client.ts](../src/acp/client.ts), lines 286–291;
-[src/mcp/server.ts](../src/mcp/server.ts), lines 40–59, 73–78. **Evidence:** source review.
+**Location:** [src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), lines 44–60;
+[src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), lines 286–291;
+[src/mcp/server.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/server.ts), lines 40–59, 73–78. **Evidence:** source review.
 
 `A2A_AGENTS` accepts any syntactically valid JSON, including `null`, arrays, and non-string URLs.
 Numeric settings accept `NaN`, negative values, fractions, and empty-string zero. A regular file
@@ -420,7 +420,7 @@ Explicitly test `null`, `[]`, inherited property names, blank values, and non-lo
 
 **Status:** Open.
 
-**Location:** [src/acp/agent.ts](../src/acp/agent.ts), `describeError`, lines 118–124;
+**Location:** [src/acp/agent.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/agent.ts), `describeError`, lines 118–124;
 [docs/troubleshooting.md](troubleshooting.md), authentication section. **Evidence:** source review.
 
 The code replaces any `RequestError` with code `-32000` with a login instruction, discarding
@@ -437,7 +437,7 @@ failure reports its actual cause.
 
 **Status:** Open.
 
-**Location:** [src/proxy.ts](../src/proxy.ts), lines 22–55. **Evidence:** source review.
+**Location:** [src/proxy.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/proxy.ts), lines 22–55. **Evidence:** source review.
 
 The request body is buffered without a limit. Response chunks are written regardless of
 `res.write()` returning false, and downstream closure does not destroy the upstream request.
@@ -456,9 +456,9 @@ does not cause unbounded buffering, and an upstream reset settles the downstream
 
 **Status:** Partly closed. `yarn typecheck` carries the flags this document used, CI runs it on every push and pull request, and the source tree is at zero diagnostics. Still open: the smoke client returns 0 when its first turn does not reach `INPUT_REQUIRED`, and offline regression coverage of the lifecycle defects.
 
-**Location:** [package.json](../package.json), scripts;
-[src/acp/client.ts](../src/acp/client.ts), lines 106–124, 255–269;
-[src/client.ts](../src/client.ts), lines 84–108. **Evidence:** compiler run and source review.
+**Location:** [package.json](https://github.com/Flopsstuff/ambassy/blob/main/package.json), scripts;
+[src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts), lines 106–124, 255–269;
+[src/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/client.ts), lines 84–108. **Evidence:** compiler run and source review.
 
 An explicit strict check produced 30 diagnostics. Concrete examples include declaring piped
 stderr when spawn actually inherits it, accessing an `unknown` initialize response, unchecked
@@ -481,7 +481,7 @@ fail before their corresponding fixes. Do not make paid model calls part of rout
 
 **Status:** Closed by `3ddd7d4`. `insideRoot` refuses `..` and anything beginning `../`, and nothing else.
 
-**Location:** [src/acp/permissions.ts](../src/acp/permissions.ts), lines 86–88.
+**Location:** [src/acp/permissions.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/permissions.ts), lines 86–88.
 **Evidence:** reproduced: `insideRoot(process.cwd(), "..notes")` returned false.
 
 `rel.startsWith('..')` rejects ordinary child names such as `..notes` as well as parent traversal.
@@ -496,7 +496,7 @@ and symlink escapes fail.
 
 **Status:** Open.
 
-**Location:** [src/acp/log.ts](../src/acp/log.ts), `rotate`, lines 78–85.
+**Location:** [src/acp/log.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/log.ts), `rotate`, lines 78–85.
 **Evidence:** reproduced with `maxFiles: 1` and two records forcing rotation.
 
 Rotation removes `.0` and then renames the live file to `.1`, keeping both live and rotated

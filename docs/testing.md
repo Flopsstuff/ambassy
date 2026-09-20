@@ -17,7 +17,7 @@ yarn test:coverage   # the same, with a v8 coverage report
 
 ## What runs them
 
-**Vitest**, configured in [vitest.config.ts](../vitest.config.ts). It transforms TypeScript with
+**Vitest**, configured in [vitest.config.ts](https://github.com/Flopsstuff/ambassy/blob/main/vitest.config.ts). It transforms TypeScript with
 esbuild — the same engine `tsx` uses to run the servers — so imports keep their `.ts` extensions,
 nothing is compiled to disk, and the absence of a `tsconfig.json` stays deliberate rather than
 worked around.
@@ -60,12 +60,12 @@ in the production code and a reader can see what is replaceable:
 
 | Seam | Where | What it replaces in a test |
 |---|---|---|
-| `RuntimeSource` / `TurnRuntime` | [src/acp/executor.ts](../src/acp/executor.ts) | The adapter subprocess and its ACP session |
-| `A2APoolOptions.createClient` | [src/mcp/a2a.ts](../src/mcp/a2a.ts) | `ClientFactory.createFromUrl`, which fetches a card and negotiates a transport |
-| `discoveryTimeoutMs` / `requestTimeoutMs` | [src/mcp/a2a.ts](../src/mcp/a2a.ts) | Deadlines measured in seconds, so a test can pass 20 ms and watch one expire |
-| `RegistryOptions.sandboxDir` | [src/acp/client.ts](../src/acp/client.ts) | `.acp-sandboxes/` in the repository |
-| `RevisorOptions.stepDelayMs` | [src/revisor.ts](../src/revisor.ts) | The pause that exists so a human sees two WORKING frames |
-| `ToolOptions.pool` | [src/mcp/tools.ts](../src/mcp/tools.ts) | The A2A pool behind the four MCP tools |
+| `RuntimeSource` / `TurnRuntime` | [src/acp/executor.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/executor.ts) | The adapter subprocess and its ACP session |
+| `A2APoolOptions.createClient` | [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts) | `ClientFactory.createFromUrl`, which fetches a card and negotiates a transport |
+| `discoveryTimeoutMs` / `requestTimeoutMs` | [src/mcp/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/a2a.ts) | Deadlines measured in seconds, so a test can pass 20 ms and watch one expire |
+| `RegistryOptions.sandboxDir` | [src/acp/client.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/acp/client.ts) | `.acp-sandboxes/` in the repository |
+| `RevisorOptions.stepDelayMs` | [src/revisor.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/revisor.ts) | The pause that exists so a human sees two WORKING frames |
+| `ToolOptions.pool` | [src/mcp/tools.ts](https://github.com/Flopsstuff/ambassy/blob/main/src/mcp/tools.ts) | The A2A pool behind the four MCP tools |
 
 Two things are faked rather than injected, because they are the environment itself: the clock
 (`vi.useFakeTimers`, for the heartbeat and the idle clock) and the filesystem (real temporary
@@ -79,33 +79,33 @@ the audience.
 
 Most of them exist because of something that was observed, not imagined:
 
-- **The classifier** ([permissions.test.ts](../tests/acp/permissions.test.ts)) is tested as a
+- **The classifier** ([permissions.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/acp/permissions.test.ts)) is tested as a
   security boundary: every verdict in both directions, paths that climb out in each spelling,
   symlinks in both directions, a file named `..notes` that is a child and not a parent, and the
   rule that an answer must be an option the agent offered — inventing one makes Claude fail the
   whole turn and makes Codex silently downgrade it to a cancel.
-- **The translation** ([executor.test.ts](../tests/acp/executor.test.ts)) walks the table in
-  [AGENTS.md](../AGENTS.md) row by row, including the two endings that look like bugs from
+- **The translation** ([executor.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/acp/executor.test.ts)) walks the table in
+  [AGENTS.md](https://github.com/Flopsstuff/ambassy/blob/main/AGENTS.md) row by row, including the two endings that look like bugs from
   outside: a turn that ends `end_turn` after a cancel still reports `CANCELED`, because the SDK
   refuses a `CancelTask` whose stored state is anything else, and the artifact still goes out
   first so the work is not thrown away.
-- **Rotation** ([log.test.ts](../tests/acp/log.test.ts)) checks that every line in every file
+- **Rotation** ([log.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/acp/log.test.ts)) checks that every line in every file
   parses on its own. Rotating after a write instead of before is the mistake that produces a
   record no reader can recover.
-- **The heartbeat** ([heartbeat.test.ts](../tests/mcp/heartbeat.test.ts)) proves both halves: it
+- **The heartbeat** ([heartbeat.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/mcp/heartbeat.test.ts)) proves both halves: it
   keeps a slow turn alive, and it lets go of a wedged one instead of holding the call until the
   client's wall-clock limit, roughly 28 hours away.
-- **Recovery** ([a2a.test.ts](../tests/mcp/a2a.test.ts), [tools.test.ts](../tests/mcp/tools.test.ts))
+- **Recovery** ([a2a.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/mcp/a2a.test.ts), [tools.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/mcp/tools.test.ts))
   is most of what the MCP suites are about, because most of what can go wrong there leaves work
   running on the other side. A turn that ends without a terminal state is `truncated` and rendered
   as an error rather than as an agent that finished; a broken stream throws a `TurnError` carrying
   the identity; an interruption is answered with a call that names the *task*, since answering
   with the context alone opens a second one beside it. The case with no task id at all has its own
   test, because there the honest answer is that nobody knows whether the work was accepted.
-- **Artifact aggregation** ([a2a.test.ts](../tests/mcp/a2a.test.ts)) keeps pieces keyed by
+- **Artifact aggregation** ([a2a.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/mcp/a2a.test.ts)) keeps pieces keyed by
   `artifactId` and respects `append`: concatenating regardless turns two replacements of one
   artifact into `oldnew`, and merges artifacts that were never the same artifact.
-- **Sandbox allocation** ([sandbox.test.ts](../tests/acp/sandbox.test.ts)) is driven by ids a
+- **Sandbox allocation** ([sandbox.test.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/acp/sandbox.test.ts)) is driven by ids a
   caller chose — `..`, `/etc`, an empty string — because `owned: true` is the flag that lets a
   shell run, and the directory it describes must be one this process created.
 
@@ -127,7 +127,7 @@ explains.
 Two habits keep this suite worth reading:
 
 - **Assert the behaviour, not the implementation.** `states()` and `said()` in
-  [tests/helpers/a2a.ts](../tests/helpers/a2a.ts) exist so a test reads like the cycle a client
+  [tests/helpers/a2a.ts](https://github.com/Flopsstuff/ambassy/blob/main/tests/helpers/a2a.ts) exist so a test reads like the cycle a client
   observes, rather than like a list of `publish` calls.
 - **Say why the case exists.** Half of these tests encode a protocol rule or a defect that was
   once real; a comment naming it is what stops someone deleting the test when it becomes

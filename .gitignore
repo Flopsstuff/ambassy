@@ -48,7 +48,11 @@ tap-*.txt
 coverage/
 .nyc_output/
 
-# --- Build output (there is none — tsx runs TypeScript directly — but just in case) ---
+# --- Build output ---
+# There is none for the sources — tsx runs TypeScript directly. The documentation site
+# is the exception: VitePress builds docs/ into these two, and neither belongs here.
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 dist/
 build/
 out/

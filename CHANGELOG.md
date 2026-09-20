@@ -39,8 +39,8 @@ an external channel — a human, a policy, or a supervising agent.
 - **`bin/ambassyctl`** — both processes installed and driven as background services, LaunchAgents
   on macOS and `systemd --user` units on Linux.
 - **`docs/`** — architecture, both protocols, the permission model, configuration, logging,
-  testing, troubleshooting, and the repository audit, published to GitHub Pages by
-  `.github/workflows/docs.yml` through the same Jekyll that Pages runs anyway.
+  testing, troubleshooting, and the repository audit, built with VitePress and published to
+  <https://flopsstuff.github.io/ambassy/> by `.github/workflows/docs.yml`.
 - **A test suite** — `yarn test` runs 288 vitest cases over the paths that are hard to provoke by
   hand: a cancel that arrives before the session exists, a log that rotates mid-record, a stream
   that stops before its task reaches a state. Nothing is mocked at the module level; every

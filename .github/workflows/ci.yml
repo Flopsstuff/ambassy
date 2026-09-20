@@ -33,3 +33,7 @@ jobs:
       - run: yarn typecheck
 
       - run: yarn test
+
+      # The docs build fails on a dead internal link, and the Docs workflow only runs on
+      # `main` — without this, a broken link is found after it is merged rather than before.
+      - run: yarn docs:build

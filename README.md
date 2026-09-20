@@ -114,16 +114,7 @@ conversation lives. By default each conversation gets its own directory under `.
 
 ## Documentation
 
-**<https://flopsstuff.github.io/ambassy/>** — the same pages as in [`docs/`](docs/README.md),
-rendered: [architecture](docs/architecture.md), [the A2A side](docs/a2a.md),
-[the ACP bridge](docs/acp-bridge.md), [the MCP bridge](docs/mcp-bridge.md),
-[permissions](docs/permissions.md), [running as a service](docs/service.md),
-[configuration](docs/configuration.md), [logging](docs/logging.md),
-[the tests](docs/testing.md) and [troubleshooting](docs/troubleshooting.md).
-
-Which file does what is in [the source layout](docs/README.md#source-layout).
-
-`AGENTS.md` is the terse version of all of it, for an agent working in this repository.
+**<https://flopsstuff.github.io/ambassy/>** — or [`docs/`](docs/) in this repository.
 
 ## What practice revealed
 
