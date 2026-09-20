@@ -50,7 +50,7 @@ exists.
 | `read`, `search`, `think` | allow — nothing changes |
 | `edit`, `delete`, `move` with locations | allow if every path resolves inside the root |
 | `edit`, `delete`, `move` without locations | allow only if the root is ours — there is nothing to check |
-| `switch_mode` | allow only back into the supervised mode — owning the directory grants nothing here |
+| `switch_mode` | allow only the offered option that keeps supervision — owning the directory grants nothing here |
 | `execute`, `fetch`, `other` | allow only if the root is ours, or `ACP_ALLOW_EXECUTE=true` |
 
 One sentence covers the last row: **a shell runs only in a directory that belongs to us.** The
@@ -59,9 +59,26 @@ directory rather than from inspection.
 
 `switch_mode` is the exception to that sentence, and it sits in its own row for a reason. The
 session mode is what makes the adapter ask at all, so a call proposing to leave it is a call
-asking for the classifier to be switched off — owning the directory says nothing about that. The
-proposed mode is read from the tool call's `rawInput` where the adapter makes it visible; a target
-that cannot be read is refused rather than guessed.
+asking for the classifier to be switched off — owning the directory says nothing about that.
+
+Where the destination is is the part worth knowing. Both adapters ask this question when a plan
+ends, and neither puts the mode in `rawInput` — that carries the plan text. The destination is in
+the *option ids*, so the answer is a choice among them rather than a yes or a no:
+
+| Option | Adapter | Lands in |
+|---|---|---|
+| `exit-plan-default` | Claude | `default` — leaves planning, still asks about every call |
+| `exit-plan-accept-edits`, `exit-plan-auto`, `exit-plan-bypass` | Claude | an elevated mode |
+| `exit-plan-clear-*` | Claude | an elevated mode, and a fresh context |
+| `implement_plan` | Codex | nothing — plan review changes no mode either way |
+
+The table is explicit rather than pattern-matched, because it is read off the adapters' own effect
+tables (`dist/permissions/effects.js`, `src/permissions/plan-review.ts`) and an option whose
+behaviour is unverified is refused.
+
+Refusing outright is not the safe default it looks like: both adapters treat a refusal here as an
+instruction to stop, and Claude's ends the ACP turn — the adapter maps that intentional stop back
+to a cancellation, so a task that merely planned first would die on the way to doing the work.
 
 Path containment resolves symlinks as far as the path exists. Without that the check is wrong
 before it is ever attacked: on macOS `os.tmpdir()` answers `/var/folders/…`, a symlink to

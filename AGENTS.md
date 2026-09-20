@@ -213,9 +213,13 @@ agent — which is why it is one function behind one export.
 
 Its rules: read/search/think pass; edit/delete/move pass only if every path is inside the session
 root; execute/fetch/other pass only when the root is a directory the bridge created itself;
-`switch_mode` passes only back into the supervised mode, because owning the directory says nothing
-about a call asking for the classifier to be switched off. The answer must be an `optionId` **from
-the list the agent offered** — inventing one makes Claude fail the whole turn with `Permission
+`switch_mode` passes only through the offered option that keeps supervision, because owning the
+directory says nothing about a call asking for the classifier to be switched off — and because
+both adapters put the destination in the option ids (`exit-plan-default` keeps it, `exit-plan-auto`
+and the `clear-*` variants do not, Codex's `implement_plan` changes no mode at all) while `rawInput`
+carries only the plan. Refusing outright is not the safe answer it looks like: Claude reads a
+refusal there as an interrupt and the turn comes back `CANCELED`. The answer must be an `optionId`
+**from the list the agent offered** — inventing one makes Claude fail the whole turn with `Permission
 option was not offered`, and makes Codex silently downgrade it to a cancel.
 
 **A sandbox is never named after the conversation.** `contextId` is text the A2A caller chose, and
