@@ -1,39 +1,118 @@
-# Ambassy — an A2A Protocol v1.0 sandbox
+# Ambassy
 
-A minimal agent, a client and a wire-tap, so you can poke the protocol by hand.
-Everything here was verified against live traffic using `@a2a-js/sdk` 1.2.0 (spec v1.0.0).
+**One agent delegates a task to another that lives somewhere else** — on its own machine, under its
+own credentials, inside limits that neither of them can widen. That exchange is what this
+repository is about; everything else in it exists to make the exchange possible and to keep it
+honest.
+
+The obstacle is the shape a coding agent comes in. Claude Code and Codex run as a child process of
+whatever launched them, talking over a pipe — right for an editor sitting next to one, wrong for
+anybody further away. Ambassy gives that process a network address, a task that outlives the call,
+and a supervisor that is neither of the two parties.
+
+It is a sandbox for the **A2A Protocol v1.0** first and a working bridge second: everything here was
+checked against live traffic rather than inferred from the specification, and where the two
+disagreed, what actually happened is what is written down.
+
+**Version 0.1 — an MVP that works.** Tasks live in memory and vanish with the process, the A2A side
+has no authentication, and the permission classifier is a placeholder for a real external channel.
+It runs, it is used, and none of those three are things to put in front of a network you do not
+own.
+
+![One agent hands a task through Ambassy to a coding agent running on its own machine: MCP, A2A and ACP stacked in the bridge, with the permission decision made inside it](docs/assets/ambassy-overview.jpg)
+
+## The problem it solves
+
+**ACP** (Agent Client Protocol) is built for that editor case, and what it leaves out is exactly
+what delegation needs:
+
+- **No address.** Nothing outside the process that spawned it can reach the agent — not another
+  program, not another machine.
+- **No task.** A call is either in flight or lost. You cannot walk away and collect the answer
+  later, cancel a turn that went wrong, or answer a question the agent asked an hour ago.
+- **No boundary.** Whoever launches the agent approves its actions. When the launcher is itself an
+  agent doing what it was told, that approval checks nothing.
+
+**A2A** answers the first two. An agent publishes a card at a well-known URL, a task is an
+addressable thing with a lifecycle (`SUBMITTED → WORKING → INPUT_REQUIRED → COMPLETED`), and the
+task lives on the agent, so a client that drops off can come back by id.
+
+The third is a design decision, not a protocol feature, and Ambassy's answer is: **the bridge
+decides, and the caller is never asked.** The A2A client is the party that wants the work done —
+making it the supervisor would be a loop, not a check.
+
+**MCP** closes the circle from the other side: it publishes the A2A agent to a calling agent as
+four tools, so asking a remote coding agent for something is a tool call rather than a curl script.
+
+```
+your Claude Code             Ambassy                             the machine doing the work
+────────────────             ───────                             ──────────────────────────
+a2a_ask(…)      ──MCP──►   src/mcp/       ──A2A──►   src/acp/agent.ts   ──ACP──►  claude-agent-acp
+  a2a_task                 an A2A client  HTTP/SSE   an A2A server      stdio     └─ Claude Code
+  a2a_cancel                                              │                          or codex-acp
+  a2a_card                                          permissions.ts
+                                                    (decides here, never upstream)
+```
+
+Three protocols, and the first two are easy to confuse because both are JSON-RPC:
+
+| | Direction | The agent is | Carries |
+|---|---|---|---|
+| **A2A** | between peers, over HTTP | the server | a task with an identity and a lifecycle |
+| **ACP** | editor → coding agent, over a pipe | a subprocess | one turn, streamed as it happens |
+| **MCP** | calling agent → tools | a tool endpoint | a call that blocks until the task is terminal |
+
+What that adds up to in practice: the coding agent stays on the machine that holds its credentials
+and its files, while the work is handed to it over the network — and neither the caller nor the
+agent can widen what it is allowed to do.
 
 ## Running it
 
+Start with the stub. It has no model behind it, so the protocol is all that is left:
+
 ```bash
-yarn agent     # agent on :41241
-yarn client    # client: two-turn conversation with streaming
-yarn raw       # the same protocol with bare curl, no SDK
+yarn agent     # A2A server on :41241, placeholder executor
+yarn client    # SDK client: discovery, streaming, resuming a task
+yarn raw       # the same exchange in bare curl, no SDK
 ```
 
-Or put a real coding agent behind the same A2A interface:
+Then put a real coding agent behind the same interface:
 
 ```bash
 yarn agent:claude   # A2A on :41241, claude-agent-acp behind it
 yarn agent:codex    # the same, with codex-acp
 ```
 
-Same port, same card, same SSE stream — so `yarn client`, `yarn raw` and `yarn tap` work against
-the bridge unchanged. Copy `.env.example` to `.env` to choose where the agent is allowed to work;
-by default each conversation gets its own directory under `.acp-sandboxes/`.
+Same port, same card, same SSE stream — `yarn client`, `yarn raw` and `yarn tap` work against
+either without a change, which is the point: a client cannot tell from the wire whether the answer
+came from twenty lines of `String.split` or from a coding agent, and it should not have to.
 
-To watch the raw protocol:
+To publish the agent to your own Claude Code, and to watch the raw protocol:
 
 ```bash
+yarn mcp                                        # MCP endpoint on :41243, prints the token and the connect command
 PUBLIC_URL=http://localhost:41242/ yarn agent   # agent advertises the tap's address in its card
-yarn tap                                        # proxy :41242 → :41241, prints everything
+yarn tap                                        # proxy :41242 → :41241, prints every frame
 AGENT_URL=http://localhost:41242 yarn client
 ```
 
-## Files
+Both servers bind `127.0.0.1` by default: an A2A agent here runs with no authentication, so a wider
+bind hands a coding agent to the network. The MCP endpoint is the side meant to face one, and it
+has a bearer token.
 
-The four A2A programs sit in `src/`; the ACP bridge is grouped under `src/acp/`, since it is a
-second protocol rather than more of the first.
+To keep it running — on this machine or the one that does the work:
+
+```bash
+yarn service install --with-mcp    # LaunchAgents on macOS, systemd --user units on Linux
+yarn service status                # what the service manager believes, next to what the network answers
+yarn service token                 # the endpoint, the token, and a ready .mcp.json block
+```
+
+Copy `.env.example` to `.env` for the rest: where the agent may work, what it is called
+(`AGENT_NAME` names it in both the Agent Card and the MCP `serverInfo`), and how long an idle
+conversation lives. By default each conversation gets its own directory under `.acp-sandboxes/`.
+
+## Files
 
 | File | What it demonstrates |
 |---|---|
@@ -45,13 +124,19 @@ second protocol rather than more of the first.
 | `src/acp/client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
 | `src/acp/permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
 | `src/acp/log.ts` | Two rotating JSON Lines logs: outward calls with the token budget, and the agent's own work |
+| `src/mcp/server.ts` | The MCP endpoint: bearer guard, one server per request, tools over Streamable HTTP |
+| `src/mcp/a2a.ts` | The pool of A2A clients the tools call, and how a turn is flattened into a result |
+| `bin/ambassyctl` | Installs and drives both processes as services; `service/` holds the unit templates |
 
 ## Documentation
 
 Longer prose lives in [`docs/`](docs/README.md): [architecture](docs/architecture.md),
 [the A2A side](docs/a2a.md), [the ACP bridge](docs/acp-bridge.md),
-[permissions](docs/permissions.md), [configuration](docs/configuration.md),
+[the MCP bridge](docs/mcp-bridge.md), [permissions](docs/permissions.md),
+[running as a service](docs/service.md), [configuration](docs/configuration.md),
 [logging](docs/logging.md) and [troubleshooting](docs/troubleshooting.md).
+
+`AGENTS.md` is the terse version of all of it, for an agent working in this repository.
 
 ## What practice revealed
 
@@ -76,6 +161,11 @@ bare payload.
 **`INPUT_REQUIRED` is a non-terminal state.** The task stays alive, the client sends another
 message with the same `taskId`, and work resumes. This is precisely what separates A2A from an
 ordinary `POST /do`: the call has state, history and an identity.
+
+**Cancelling means ending up `CANCELED`, not merely being told.** `CancelTask` drains the event bus
+and then insists the stored state is `CANCELED`; a task that finishes normally after the cancel
+comes back to the caller as `-32002 TASK_NOT_CANCELABLE`. An executor that forwards the cancel and
+lets the turn finish looks broken from outside.
 
 **An agent that approves its own permissions is not being checked.** The bridge never asks the
 calling A2A client whether the coding agent may edit a file — the caller is the party that wants

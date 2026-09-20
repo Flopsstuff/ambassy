@@ -51,6 +51,11 @@ shipped in `.env.example`, otherwise reached `mkdirSync('')` and killed the serv
 listened. `ACP_CWD`, `A2A_AGENTS`, `MCP_ALLOWED_HOSTS` and `MCP_TOKEN` keep `??`, because there
 blank is a real answer.
 
+The card's `version` is Ambassy's own, read from `package.json` through `src/version.ts` so the
+number lives in one place. It used to be the adapter's, which made the bridge announce itself as
+v0.79.0; the adapter's name and version are in the card's `description` instead, because `version`
+tells a caller what it is talking to and the description tells it what is behind that.
+
 `AGENT_NAME` names the agent to callers in both places one looks: the Agent Card's `name` and the
 MCP `serverInfo`. Blank keeps `Claude (via ACP)` / `Codex (via ACP)`, `Revisor` and `ambassy-mcp`.
 On the card it replaces the default outright — `(via ACP)` separates no two instances, and the

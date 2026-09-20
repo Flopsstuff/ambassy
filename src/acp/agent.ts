@@ -36,6 +36,7 @@ import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/serve
 import { RequestError, type StopReason, type Usage } from '@agentclientprotocol/sdk';
 import { AcpRegistry, BACKENDS, type AcpRuntime, type Backend, type BackendId } from './client.ts';
 import { openLogs, type Logs } from './log.ts';
+import { VERSION } from '../version.ts';
 
 // Node 23 reads .env by itself; a missing file is not an error, the defaults below suffice.
 const ENV_FILE = fileURLToPath(new URL('../../.env', import.meta.url));
@@ -577,7 +578,11 @@ console.log(
 
 const agentCard: AgentCard = {
   name: AGENT_NAME,
-  description: `An A2A front for ${downstream?.name ?? backend.bin}: the task is forwarded to a real coding agent over ACP.`,
+  // The adapter's name and version live here rather than in `version`, which names this bridge:
+  // a caller reading the card is told what it is talking to, then what is behind it.
+  description:
+    `An A2A front for ${downstream?.name ?? backend.bin}${downstream?.version ? ` ${downstream.version}` : ''}: ` +
+    'the task is forwarded to a real coding agent over ACP.',
   supportedInterfaces: [
     {
       url: PUBLIC_URL,
@@ -587,7 +592,7 @@ const agentCard: AgentCard = {
     },
   ],
   provider: { organization: 'Flopsstuff', url: 'https://example.local' },
-  version: downstream?.version ?? '0.1.0',
+  version: VERSION,
   capabilities: {
     streaming: true,
     pushNotifications: false,

@@ -28,6 +28,7 @@ import {
   type RequestContext,
 } from '@a2a-js/sdk/server';
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
+import { VERSION } from './version.ts';
 
 const PORT = Number(process.env.PORT || 41241);
 // Loopback by default: the agent runs `UserBuilder.noAuthentication`, so a wider bind
@@ -226,7 +227,7 @@ const agentCard: AgentCard = {
     },
   ],
   provider: { organization: 'Flopsstuff', url: 'https://example.local' },
-  version: '0.1.0',
+  version: VERSION,
   capabilities: {
     streaming: true,
     pushNotifications: false,

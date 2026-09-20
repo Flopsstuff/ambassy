@@ -26,6 +26,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import type { Request, Response } from 'express';
 
 import { openLogs } from '../acp/log.ts';
+import { VERSION } from '../version.ts';
 import { A2APool } from './a2a.ts';
 import { bearerGuard, mintToken, persistToken } from './auth.ts';
 import { registerTools } from './tools.ts';
@@ -90,7 +91,7 @@ const app = createMcpExpressApp({
 app.use(MCP_PATH, bearerGuard(token));
 
 app.all(MCP_PATH, async (req: Request, res: Response) => {
-  const server = new McpServer({ name: AGENT_NAME, version: '0.1.0' });
+  const server = new McpServer({ name: AGENT_NAME, version: VERSION });
   registerTools(server, { pool, logs, heartbeatMs: HEARTBEAT_MS, silenceLimitMs: SILENCE_MS });
 
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
