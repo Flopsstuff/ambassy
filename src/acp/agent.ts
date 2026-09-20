@@ -33,8 +33,9 @@ import {
   type RequestContext,
 } from '@a2a-js/sdk/server';
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
-import { RequestError, type StopReason } from '@agentclientprotocol/sdk';
+import { RequestError, type StopReason, type Usage } from '@agentclientprotocol/sdk';
 import { AcpRegistry, BACKENDS, type AcpRuntime, type Backend, type BackendId } from './client.ts';
+import { openLogs, type Logs } from './log.ts';
 
 // Node 23 reads .env by itself; a missing file is not an error, the defaults below suffice.
 const ENV_FILE = fileURLToPath(new URL('../../.env', import.meta.url));
@@ -54,6 +55,11 @@ const PUBLIC_URL = process.env.PUBLIC_URL ?? `http://localhost:${PORT}/`;
 const ACP_CWD = process.env.ACP_CWD ?? '';
 const ACP_ALLOW_EXECUTE = process.env.ACP_ALLOW_EXECUTE === 'true';
 const ACP_IDLE_TIMEOUT_MS = Number(process.env.ACP_IDLE_TIMEOUT_MS ?? 300_000);
+const LOG_DIR = process.env.LOG_DIR ?? fileURLToPath(new URL('../../logs/', import.meta.url));
+const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES ?? 5_000_000);
+const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES ?? 5);
+
+const logs = openLogs({ dir: LOG_DIR, maxBytes: LOG_MAX_BYTES, maxFiles: LOG_MAX_FILES });
 
 // --- Part/Message helpers: in v1.0 a Part is a discriminated union on `content.$case` ---
 
@@ -122,7 +128,10 @@ class AcpExecutor implements AgentExecutor {
   private readonly runtimeByTask = new Map<string, AcpRuntime>();
   private readonly cancelled = new Set<string>();
 
-  constructor(private readonly registry: AcpRegistry) {}
+  constructor(
+    private readonly registry: AcpRegistry,
+    private readonly logs: Logs,
+  ) {}
 
   /**
    * The SDK awaits this, then drains the bus until the task is terminal and insists the
@@ -137,12 +146,14 @@ class AcpExecutor implements AgentExecutor {
 
     if (!runtime) {
       console.log(`  ↯ cancel ${taskId.slice(0, 8)}: no session yet — execute() will stop before prompting`);
+      this.logs.call('task.cancel', { taskId, phase: 'no-session' });
       return;
     }
 
     // In ACP cancelling is a notification, not a request: the turn keeps streaming and
     // ends with stopReason 'cancelled', which `turn()` maps to TASK_STATE_CANCELED.
     console.log(`  ↯ cancel ${taskId.slice(0, 8)}: session/cancel → ${runtime.sessionId.slice(0, 8)}`);
+    this.logs.call('task.cancel', { taskId, phase: 'session/cancel', sessionId: runtime.sessionId });
     try {
       await runtime.notifyCancel();
     } catch (err) {
@@ -159,6 +170,12 @@ class AcpExecutor implements AgentExecutor {
       `\n▶ execute: task=${taskId.slice(0, 8)} context=${contextId.slice(0, 8)} ` +
         `${existingTask ? '(resuming task)' : '(new task)'} text=${JSON.stringify(text.slice(0, 40))}`,
     );
+    this.logs.call('task.start', {
+      taskId,
+      contextId,
+      resuming: Boolean(existingTask),
+      chars: text.length,
+    });
 
     // PROTOCOL RULE: the first event must always be a Task or a Message — otherwise
     // the server rejects the stream.
@@ -185,6 +202,7 @@ class AcpExecutor implements AgentExecutor {
       // No text is not an error but a non-terminal state: the task stays alive, awaiting input.
       if (!text) {
         console.log('  ⤷ nothing to send → INPUT_REQUIRED (task stays open, adapter stays up)');
+        this.logs.call('task.input_required', { taskId, contextId, sessionId: runtime.sessionId });
         bus.publish(
           AgentEvent.statusUpdate(
             statusUpdate(
@@ -204,6 +222,7 @@ class AcpExecutor implements AgentExecutor {
       // it to, so it is honoured here instead of being lost.
       if (this.cancelled.has(taskId)) {
         console.log('  ⤷ cancelled before the prompt was sent');
+        this.logs.call('task.finish', { taskId, contextId, state: 'CANCELED', phase: 'before-prompt' });
         terminal = true;
         bus.publish(
           AgentEvent.statusUpdate(
@@ -224,6 +243,7 @@ class AcpExecutor implements AgentExecutor {
       terminal = true;
       const reason = describeError(err);
       console.log(`  ⤷ failed: ${reason}`);
+      this.logs.call('task.failed', { taskId, contextId, reason });
       bus.publish(
         AgentEvent.statusUpdate(
           statusUpdate(
@@ -237,6 +257,9 @@ class AcpExecutor implements AgentExecutor {
     } finally {
       this.runtimeByTask.delete(taskId);
       this.cancelled.delete(taskId);
+      // Also cleared before settle(); repeated here so a turn that threw does not leave
+      // the permission handlers labelling their records with a task that is over.
+      runtime?.endTurn();
       if (terminal) runtime?.openTasks.delete(taskId);
     }
   }
@@ -252,7 +275,20 @@ class AcpExecutor implements AgentExecutor {
     const { session } = runtime;
     const chunks: string[] = [];
     const tools: ToolRecord[] = [];
+    const startedAt = Date.now();
     runtime.takeDenials(); // drop anything left over from an earlier turn
+    // Tells the permission handlers which task they are deciding for, so their records in
+    // work.jsonl can be matched to it.
+    runtime.beginTurn(taskId);
+    this.logs.call('prompt.start', {
+      taskId,
+      contextId,
+      sessionId: runtime.sessionId,
+      chars: text.length,
+    });
+
+    const logTool = (event: string, fields: Record<string, unknown>): void =>
+      this.logs.work(event, { taskId, contextId, sessionId: runtime.sessionId, ...fields });
 
     const say = (line: string): void => {
       bus.publish(
@@ -317,7 +353,9 @@ class AcpExecutor implements AgentExecutor {
 
       if (message.kind === 'stop') {
         flush();
-        return this.settle(message.stopReason, message.response.usage, runtime, chunks, tools, taskId, contextId, bus, finish);
+        runtime.endTurn();
+        return this.settle(
+          startedAt,message.stopReason, message.response.usage, runtime, chunks, tools, taskId, contextId, bus, finish);
       }
 
       const update = message.update;
@@ -342,6 +380,13 @@ class AcpExecutor implements AgentExecutor {
           };
           tools.push(record);
           console.log(`  ⤷ tool «${record.title}» (${record.kind}, ${record.status})`);
+          logTool('tool.call', {
+            toolCallId: record.toolCallId,
+            title: record.title,
+            kind: record.kind,
+            status: record.status,
+            locations: (update.locations ?? []).map((l) => l.path),
+          });
           say(`«${record.title}» (${record.kind}, ${record.status})`);
           break;
         }
@@ -354,6 +399,7 @@ class AcpExecutor implements AgentExecutor {
           if (next && record && next !== record.status) {
             record.status = next;
             console.log(`  ⤷ tool «${record.title}» → ${next}`);
+            logTool('tool.update', { toolCallId: record.toolCallId, title: record.title, status: next });
             say(`«${record.title}» → ${next}`);
           }
           break;
@@ -361,6 +407,9 @@ class AcpExecutor implements AgentExecutor {
 
         case 'plan': {
           flush();
+          logTool('plan', {
+            entries: update.entries.map((e) => ({ status: e.status, content: e.content })),
+          });
           const entries = update.entries.map((e) => `· [${e.status}] ${e.content}`).join('\n');
           say(`plan:\n${entries}`);
           break;
@@ -375,8 +424,9 @@ class AcpExecutor implements AgentExecutor {
   }
 
   private settle(
+    startedAt: number,
     stopReason: StopReason,
-    usage: unknown,
+    usage: Usage | null | undefined,
     runtime: AcpRuntime,
     chunks: string[],
     tools: ToolRecord[],
@@ -389,13 +439,36 @@ class AcpExecutor implements AgentExecutor {
     const failedTools = tools.filter((t) => t.status === 'failed');
     const denials = runtime.takeDenials();
     const cancelRequested = this.cancelled.has(taskId);
+    const budget = runtime.addUsage(usage);
+
+    // The token budget lives here rather than in the artifact alone: a conversation is
+    // several turns, and only the running total says what it cost.
+    this.logs.call('prompt.stop', {
+      taskId,
+      contextId,
+      sessionId: runtime.sessionId,
+      ms: Date.now() - startedAt,
+      stopReason,
+      cancelRequested,
+      answerChars: answer.length,
+      toolCalls: tools.length,
+      failedToolCalls: failedTools.length,
+      refusals: denials,
+      usage: usage ?? null,
+      budget,
+    });
+
+    const done = (state: TaskState, line?: string): true => {
+      this.logs.call('task.finish', { taskId, contextId, state: TaskState[state], stopReason, budget });
+      return finish(state, line);
+    };
 
     if (stopReason === 'cancelled') {
       // Two different things end a turn this way: an A2A CancelTask, or our own classifier
       // refusing an action on a backend that offers no gentler refusal than aborting the
       // turn. Only the log distinguishes them unless the reason travels with the status.
       console.log(`  ⤷ cancelled${denials.length ? ` after ${denials.length} refusal(s)` : ''}`);
-      return finish(
+      return done(
         TaskState.TASK_STATE_CANCELED,
         denials.length ? `Refused by the bridge: ${denials.join('; ')}` : undefined,
       );
@@ -403,7 +476,7 @@ class AcpExecutor implements AgentExecutor {
 
     if (stopReason === 'refusal') {
       console.log('  ⤷ refused');
-      return finish(TaskState.TASK_STATE_FAILED, answer || `${backend.label} refused the request.`);
+      return done(TaskState.TASK_STATE_FAILED, answer || `${backend.label} refused the request.`);
     }
 
     const summary = {
@@ -445,7 +518,7 @@ class AcpExecutor implements AgentExecutor {
     // happen is not thrown away with the status.
     if (cancelRequested) {
       console.log('  ⤷ cancelled, though the agent had already finished the turn');
-      return finish(
+      return done(
         TaskState.TASK_STATE_CANCELED,
         'Cancelled. The agent had already finished this turn — its answer is in the artifact.',
       );
@@ -467,7 +540,7 @@ class AcpExecutor implements AgentExecutor {
         : `Stopped early: ${stopReason}.`;
 
     console.log(`  ⤷ completed (${stopReason}), artifact delivered, ${tools.length} tool call(s)`);
-    return finish(TaskState.TASK_STATE_COMPLETED, note);
+    return done(TaskState.TASK_STATE_COMPLETED, note);
   }
 }
 
@@ -478,6 +551,7 @@ const registry = new AcpRegistry({
   cwdOverride: ACP_CWD,
   allowExecute: ACP_ALLOW_EXECUTE,
   idleTimeoutMs: ACP_IDLE_TIMEOUT_MS,
+  logs,
 });
 
 console.log(`Probing ${backend.bin}…`);
@@ -527,7 +601,7 @@ const agentCard: AgentCard = {
   signatures: [],
 };
 
-const requestHandler = new DefaultRequestHandler(agentCard, new InMemoryTaskStore(), new AcpExecutor(registry));
+const requestHandler = new DefaultRequestHandler(agentCard, new InMemoryTaskStore(), new AcpExecutor(registry, logs));
 
 const app = express();
 app.use((req, _res, next) => {
@@ -543,6 +617,7 @@ app.listen(PORT, () => {
   console.log(`${agentCard.name} listening on http://localhost:${PORT}`);
   console.log(`Agent Card:          http://localhost:${PORT}/${AGENT_CARD_PATH}`);
   console.log(`Session root:        ${ACP_CWD || 'a fresh sandbox per conversation'}`);
+  console.log(`Logs:                ${logs.dir} (calls.jsonl, work.jsonl)`);
 });
 
 const shutdown = async (signal: string): Promise<void> => {

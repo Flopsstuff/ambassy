@@ -27,6 +27,7 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
+import type { Fields } from './log.ts';
 
 /** The area the agent is confined to, and how much we trust it. */
 export interface Boundary {
@@ -36,6 +37,14 @@ export interface Boundary {
   owned: boolean;
   /** Escape hatch for shell and network when the root is not ours. Off by default. */
   allowExecute: boolean;
+}
+
+/** Everything a handler needs besides the request itself. */
+export interface Supervision {
+  boundary: Boundary;
+  /** Records a refusal so the turn can tell the A2A client why it ended the way it did. */
+  onDeny?: (summary: string) => void;
+  log?: (event: string, fields: Fields) => void;
 }
 
 interface Verdict {
@@ -139,24 +148,34 @@ const pickOption = (options: PermissionOption[], allow: boolean): PermissionOpti
 
 export const decidePermission = (
   params: RequestPermissionRequest,
-  boundary: Boundary,
-  onDeny?: (summary: string) => void,
+  { boundary, onDeny, log }: Supervision,
 ): RequestPermissionResponse => {
   const verdict = classify(params.toolCall, boundary);
   const title = params.toolCall.title ?? params.toolCall.toolCallId;
   const kind = params.toolCall.kind ?? 'other';
   const option = pickOption(params.options, verdict.allow);
+  const common = {
+    sessionId: params.sessionId,
+    toolCallId: params.toolCall.toolCallId,
+    title,
+    kind,
+    reason: verdict.reason,
+    locations: (params.toolCall.locations ?? []).map((l) => l.path),
+    offered: params.options.map((o) => ({ optionId: o.optionId, kind: o.kind })),
+  };
 
   if (!option) {
     // Answering with an id the agent never offered is the one thing we must not do:
     // Claude fails the whole turn with "Permission option was not offered", and Codex
     // silently downgrades it to a cancel, so the tool dies with nothing in the log.
     console.log(`  🔒 «${title}» (${kind}) → cancelled — no ${verdict.allow ? 'allow' : 'reject'} option was offered`);
+    log?.('permission', { ...common, decision: 'cancelled', optionId: null });
     onDeny?.(`${title}: ${verdict.reason}`);
     return { outcome: { outcome: 'cancelled' } };
   }
 
   console.log(`  🔒 «${title}» (${kind}) → ${verdict.allow ? 'allow' : 'deny'} [${option.optionId}] — ${verdict.reason}`);
+  log?.('permission', { ...common, decision: verdict.allow ? 'allow' : 'deny', optionId: option.optionId });
   if (!verdict.allow) onDeny?.(`${title}: ${verdict.reason}`);
   return { outcome: { outcome: 'selected', optionId: option.optionId } };
 };
@@ -167,8 +186,13 @@ export const decidePermission = (
 // through us instead of touching the disk behind our back. Every read and write then
 // passes the boundary check and lands in the log.
 
-const guardPath = (path: string, boundary: Boundary): string => {
+const guardPath = (
+  path: string,
+  boundary: Boundary,
+  log?: (event: string, fields: Fields) => void,
+): string => {
   if (!insideRoot(boundary.root, path)) {
+    log?.('fs.denied', { path, root: boundary.root });
     throw RequestError.invalidParams(undefined, `path escapes the session root ${boundary.root}: ${path}`);
   }
   return resolve(boundary.root, path);
@@ -178,11 +202,18 @@ const shortPath = (target: string, boundary: Boundary): string => relative(bound
 
 export const readTextFileInsideRoot = async (
   params: ReadTextFileRequest,
-  boundary: Boundary,
+  { boundary, log }: Supervision,
 ): Promise<ReadTextFileResponse> => {
-  const target = guardPath(params.path, boundary);
+  const target = guardPath(params.path, boundary, log);
   const whole = await readFile(target, 'utf8');
   console.log(`  📄 read ${shortPath(target, boundary)}`);
+  log?.('fs.read', {
+    sessionId: params.sessionId,
+    path: shortPath(target, boundary),
+    bytes: Buffer.byteLength(whole),
+    line: params.line ?? null,
+    limit: params.limit ?? null,
+  });
 
   if (params.line == null && params.limit == null) return { content: whole };
 
@@ -194,11 +225,16 @@ export const readTextFileInsideRoot = async (
 
 export const writeTextFileInsideRoot = async (
   params: WriteTextFileRequest,
-  boundary: Boundary,
+  { boundary, log }: Supervision,
 ): Promise<WriteTextFileResponse> => {
-  const target = guardPath(params.path, boundary);
+  const target = guardPath(params.path, boundary, log);
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, params.content, 'utf8');
   console.log(`  📝 wrote ${shortPath(target, boundary)} (${params.content.length} chars)`);
+  log?.('fs.write', {
+    sessionId: params.sessionId,
+    path: shortPath(target, boundary),
+    bytes: Buffer.byteLength(params.content),
+  });
   return {};
 };

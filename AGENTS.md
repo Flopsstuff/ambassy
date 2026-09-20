@@ -136,6 +136,44 @@ Two things follow, and the bridge does both:
 In ACP the cancel itself is a notification, not a request: `session/cancel` is sent, the updates
 keep arriving, and the turn closes with `stopReason: 'cancelled'`.
 
+### Logging
+
+Two files under `logs/`, JSON Lines, rotated by size (`src/acp/log.ts`). Written by hand for the
+same reason `src/proxy.ts` is: appending a line, counting bytes and renaming files is the whole
+job, and a logging library would hide it behind transports without making it more correct. The
+format is structured because half of what is recorded is — token counts, tool-call records, the
+paths a permission decision turned on — and prose would force the reader to parse English back
+into numbers. A failed write is reported once to stderr and then swallowed: logging must not be
+able to take the bridge down.
+
+`calls.jsonl` — the outward boundary and what it costs:
+
+| event | carries |
+|---|---|
+| `handshake`, `handshake.failed` | the startup probe: agent name and version, protocol version, auth methods |
+| `adapter.spawn` | pid, backend, cwd, whether the root is ours |
+| `session.new` | session id, cwd, the mode settled on, how long it took |
+| `task.start`, `task.input_required` | the A2A side, for correlation |
+| `prompt.start`, `prompt.stop` | duration, `stopReason`, tool counts, refusals, **`usage` and the running `budget`** |
+| `task.cancel`, `task.failed`, `task.finish` | how the task ended, with the budget |
+| `adapter.exit`, `adapter.reap` | exit code or idle time, and the conversation's final budget |
+
+`work.jsonl` — what happened inside a turn: `tool.call`, `tool.update`, `plan`, `permission`
+(decision, the reason, the paths, and which options the agent offered), `fs.read`, `fs.write`,
+`fs.denied`.
+
+Every record carries `ts` and `event`; work records also carry `contextId`, `taskId` and
+`sessionId`, so a permission decision can be traced back to the task that provoked it. The
+`taskId` comes from state the runtime keeps for the turn in flight, which is sound only because
+`Runtime.run` allows one turn per conversation at a time.
+
+`usage` is the cost of one turn; `budget` is the conversation's running total, since a
+conversation is several turns and only the total says what it cost. Rotation happens **before**
+a write, never after — a record split across two files is a record no reader can parse.
+
+Knobs: `LOG_DIR` (default `logs/` beside the repository root), `LOG_MAX_BYTES` (5 MB),
+`LOG_MAX_FILES` (5, the live file included). `logs/` is gitignored.
+
 ### Permissions
 
 The calling A2A client is **not** a trusted party. An agent that approves the actions of the task
@@ -214,6 +252,12 @@ On the ACP side, verified the same way:
   back as `end_turn` — which is why failed tool calls are counted separately.
 - `ClientSideConnection` is deprecated in SDK 1.4.0; the current API is
   `acp.client({name}).onRequest(...).connect(stream)`.
+
+## Longer prose
+
+`docs/` carries the human-facing documentation: architecture, both protocols, the permission
+model, configuration, logging and troubleshooting. This file stays terse on purpose — it is the
+working guide, not the explanation.
 
 ## Source of truth
 

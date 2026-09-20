@@ -44,6 +44,14 @@ second protocol rather than more of the first.
 | `src/acp/agent.ts` | The same A2A server with a real coding agent behind it: ACP updates translated into A2A events |
 | `src/acp/client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
 | `src/acp/permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
+| `src/acp/log.ts` | Two rotating JSON Lines logs: outward calls with the token budget, and the agent's own work |
+
+## Documentation
+
+Longer prose lives in [`docs/`](docs/README.md): [architecture](docs/architecture.md),
+[the A2A side](docs/a2a.md), [the ACP bridge](docs/acp-bridge.md),
+[permissions](docs/permissions.md), [configuration](docs/configuration.md),
+[logging](docs/logging.md) and [troubleshooting](docs/troubleshooting.md).
 
 ## What practice revealed
 

@@ -12,12 +12,14 @@ import { join, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import * as acp from '@agentclientprotocol/sdk';
-import type { ActiveSession, ClientConnection, InitializeResponse } from '@agentclientprotocol/sdk';
+import type { ActiveSession, ClientConnection, InitializeResponse, Usage } from '@agentclientprotocol/sdk';
+import type { Logs } from './log.ts';
 import {
   decidePermission,
   readTextFileInsideRoot,
   writeTextFileInsideRoot,
   type Boundary,
+  type Supervision,
 } from './permissions.ts';
 
 export type BackendId = 'claude' | 'codex';
@@ -63,6 +65,7 @@ export interface RegistryOptions {
   cwdOverride: string;
   allowExecute: boolean;
   idleTimeoutMs: number;
+  logs: Logs;
 }
 
 const CLIENT_NAME = 'rob-a2a-bridge';
@@ -78,13 +81,29 @@ interface Connected {
   conn: ClientConnection;
 }
 
-/** What the permission and fs handlers need to know, resolved per call. */
-interface Supervisor {
-  boundary: () => Boundary;
-  noteDenial: (summary: string) => void;
+/**
+ * Per-conversation state the permission handlers read while a turn is running.
+ *
+ * `taskId` is what lets a permission decision in work.jsonl be matched to the task that
+ * provoked it. It is safe to keep one per conversation rather than one per call because
+ * `Runtime.run` allows only one turn at a time.
+ */
+interface TurnState {
+  taskId?: string;
+  denials: string[];
 }
 
-const connect = (backend: Backend, cwd: string, supervisor: Supervisor): Connected => {
+/** Running token cost of a conversation, turn by turn. */
+export interface Budget {
+  turns: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens: number;
+  cachedWriteTokens: number;
+}
+
+const connect = (backend: Backend, cwd: string, supervise: () => Supervision): Connected => {
   const child = spawn(join(BIN_DIR, backend.bin), [], { cwd, stdio: ['pipe', 'pipe', 'inherit'] });
   child.on('error', (err) => console.error(`  ⨯ ${backend.bin} failed to start:`, err));
 
@@ -97,11 +116,9 @@ const connect = (backend: Backend, cwd: string, supervisor: Supervisor): Connect
 
   const conn = acp
     .client({ name: CLIENT_NAME })
-    .onRequest(acp.methods.client.session.requestPermission, (c) =>
-      decidePermission(c.params, supervisor.boundary(), supervisor.noteDenial),
-    )
-    .onRequest(acp.methods.client.fs.readTextFile, (c) => readTextFileInsideRoot(c.params, supervisor.boundary()))
-    .onRequest(acp.methods.client.fs.writeTextFile, (c) => writeTextFileInsideRoot(c.params, supervisor.boundary()))
+    .onRequest(acp.methods.client.session.requestPermission, (c) => decidePermission(c.params, supervise()))
+    .onRequest(acp.methods.client.fs.readTextFile, (c) => readTextFileInsideRoot(c.params, supervise()))
+    .onRequest(acp.methods.client.fs.writeTextFile, (c) => writeTextFileInsideRoot(c.params, supervise()))
     .connect(stream);
 
   return { child, conn };
@@ -130,9 +147,44 @@ class Runtime {
     private readonly child: ChildProcessWithoutNullStreams,
     private readonly conn: ClientConnection,
     readonly session: ActiveSession,
-    /** The very array the permission handler appends to — shared, not copied. */
-    private readonly denials: string[],
+    /** The very object the permission handlers read from — shared, not copied. */
+    private readonly state: TurnState,
   ) {}
+
+  private readonly total: Budget = {
+    turns: 0,
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedReadTokens: 0,
+    cachedWriteTokens: 0,
+  };
+
+  /** Marks which task the handlers are currently acting for. */
+  beginTurn(taskId: string): void {
+    this.state.taskId = taskId;
+  }
+
+  endTurn(): void {
+    this.state.taskId = undefined;
+  }
+
+  /** Adds one turn's usage to the conversation's running total. */
+  addUsage(usage?: Usage | null): Budget {
+    this.total.turns += 1;
+    if (usage) {
+      this.total.totalTokens += usage.totalTokens ?? 0;
+      this.total.inputTokens += usage.inputTokens ?? 0;
+      this.total.outputTokens += usage.outputTokens ?? 0;
+      this.total.cachedReadTokens += usage.cachedReadTokens ?? 0;
+      this.total.cachedWriteTokens += usage.cachedWriteTokens ?? 0;
+    }
+    return this.budget;
+  }
+
+  get budget(): Budget {
+    return { ...this.total };
+  }
 
   get sessionId(): string {
     return this.session.sessionId;
@@ -154,7 +206,7 @@ class Runtime {
 
   /** Policy refusals recorded since the last call, so a turn can explain why it ended. */
   takeDenials(): string[] {
-    return this.denials.splice(0);
+    return this.state.denials.splice(0);
   }
 
   async notifyCancel(): Promise<void> {
@@ -197,16 +249,32 @@ export class AcpRegistry {
    */
   async handshake(): Promise<InitializeResponse> {
     const boundary: Boundary = { root: process.cwd(), owned: false, allowExecute: false };
-    const { child, conn } = connect(this.opts.backend, process.cwd(), {
-      boundary: () => boundary,
-      noteDenial: () => {},
-    });
+    const { child, conn } = connect(this.opts.backend, process.cwd(), () => ({ boundary }));
+    const started = Date.now();
     try {
-      return await conn.agent.request(acp.methods.agent.initialize, {
+      const result = await conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: CLIENT_CAPABILITIES,
         clientInfo: { name: CLIENT_NAME, version: '0.1.0' },
       });
+      this.opts.logs.call('handshake', {
+        backend: this.opts.backend.id,
+        bin: this.opts.backend.bin,
+        ms: Date.now() - started,
+        protocolVersion: result.protocolVersion,
+        agent: result.agentInfo ?? null,
+        authMethods: (result.authMethods ?? []).map((m) => m.id),
+        capabilities: result.agentCapabilities ?? null,
+      });
+      return result;
+    } catch (err) {
+      this.opts.logs.call('handshake.failed', {
+        backend: this.opts.backend.id,
+        bin: this.opts.backend.bin,
+        ms: Date.now() - started,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     } finally {
       conn.close();
       await stop(child);
@@ -239,14 +307,26 @@ export class AcpRegistry {
     if (existing?.alive) return existing;
     if (existing) this.runtimes.delete(contextId);
 
+    const { logs, backend } = this.opts;
     const boundary = this.boundaryFor(contextId);
-    console.log(`  ⚙ ${contextId.slice(0, 8)}: starting ${this.opts.backend.bin} in ${boundary.root}`);
+    console.log(`  ⚙ ${contextId.slice(0, 8)}: starting ${backend.bin} in ${boundary.root}`);
 
-    const denials: string[] = [];
-    const { child, conn } = connect(this.opts.backend, boundary.root, {
-      boundary: () => boundary,
-      noteDenial: (summary) => denials.push(summary),
+    const state: TurnState = { denials: [] };
+    const started = Date.now();
+    const { child, conn } = connect(backend, boundary.root, () => ({
+      boundary,
+      onDeny: (summary) => state.denials.push(summary),
+      log: (event, fields) => logs.work(event, { contextId, taskId: state.taskId ?? null, ...fields }),
+    }));
+    logs.call('adapter.spawn', {
+      contextId,
+      backend: backend.id,
+      bin: backend.bin,
+      pid: child.pid ?? null,
+      cwd: boundary.root,
+      ownedRoot: boundary.owned,
     });
+
     await conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: CLIENT_CAPABILITIES,
@@ -256,12 +336,28 @@ export class AcpRegistry {
     // `mcpServers` must be present even when empty — its absence is a hard error,
     // while an empty array is fine.
     const session = await conn.agent.buildSession({ cwd: boundary.root, mcpServers: [] }).start();
-    await this.superviseMode(conn, session, contextId);
+    const mode = await this.superviseMode(conn, session, contextId);
 
-    const runtime = new Runtime(contextId, boundary, child, conn, session, denials);
+    logs.call('session.new', {
+      contextId,
+      sessionId: session.sessionId,
+      cwd: boundary.root,
+      ms: Date.now() - started,
+      mode,
+      availableModes: session.modes?.availableModes.map((m) => m.id) ?? [],
+    });
+
+    const runtime = new Runtime(contextId, boundary, child, conn, session, state);
     runtime.onExit(() => {
       if (this.runtimes.get(contextId) === runtime) this.runtimes.delete(contextId);
       console.log(`  ⨯ ${contextId.slice(0, 8)}: adapter exited`);
+      logs.call('adapter.exit', {
+        contextId,
+        sessionId: session.sessionId,
+        code: child.exitCode,
+        signal: child.signalCode,
+        budget: runtime.budget,
+      });
     });
     this.runtimes.set(contextId, runtime);
     console.log(`  ⚙ ${contextId.slice(0, 8)}: session ${session.sessionId.slice(0, 8)} ready`);
@@ -269,19 +365,24 @@ export class AcpRegistry {
   }
 
   /** Put the session into the mode where the adapter asks us before it acts. */
-  private async superviseMode(conn: ClientConnection, session: ActiveSession, contextId: string): Promise<void> {
+  private async superviseMode(
+    conn: ClientConnection,
+    session: ActiveSession,
+    contextId: string,
+  ): Promise<string | null> {
     const wanted = this.opts.backend.supervisedModeId;
-    const state = session.modes;
-    const available = state?.availableModes.map((m) => m.id) ?? [];
+    const modes = session.modes;
+    const available = modes?.availableModes.map((m) => m.id) ?? [];
 
-    if (!state || !available.includes(wanted)) {
+    if (!modes || !available.includes(wanted)) {
       console.log(`  ⚙ ${contextId.slice(0, 8)}: mode '${wanted}' not offered (have: ${available.join(', ') || 'none'})`);
-      return;
+      return modes?.currentModeId ?? null;
     }
-    if (state.currentModeId === wanted) return;
+    if (modes.currentModeId === wanted) return wanted;
 
     await conn.agent.request(acp.methods.agent.session.setMode, { sessionId: session.sessionId, modeId: wanted });
-    console.log(`  ⚙ ${contextId.slice(0, 8)}: mode ${state.currentModeId} → ${wanted}`);
+    console.log(`  ⚙ ${contextId.slice(0, 8)}: mode ${modes.currentModeId} → ${wanted}`);
+    return wanted;
   }
 
   get size(): number {
@@ -299,6 +400,12 @@ export class AcpRegistry {
       for (const [contextId, runtime] of this.runtimes) {
         if (runtime.idleFor(now) <= this.opts.idleTimeoutMs) continue;
         console.log(`  ⚙ ${contextId.slice(0, 8)}: idle, stopping adapter`);
+        this.opts.logs.call('adapter.reap', {
+          contextId,
+          sessionId: runtime.sessionId,
+          idleMs: runtime.idleFor(now),
+          budget: runtime.budget,
+        });
         this.runtimes.delete(contextId);
         void runtime.dispose();
       }
