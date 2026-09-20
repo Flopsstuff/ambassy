@@ -37,16 +37,20 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const TOKEN_FILE = join(ROOT, '.mcp-token');
 const MCP_PATH = '/mcp';
 
-const PORT = Number(process.env.MCP_PORT ?? 41243);
-const HOST = process.env.MCP_HOST ?? '127.0.0.1';
-const HEARTBEAT_MS = Number(process.env.MCP_HEARTBEAT_MS ?? 60_000);
-const SILENCE_MS = Number(process.env.MCP_UPSTREAM_SILENCE_MS ?? 600_000);
-const A2A_URL = process.env.A2A_URL ?? 'http://localhost:41241/';
+// `||` rather than `??` throughout, and the difference is not cosmetic: a key left blank
+// in .env arrives as '', which `??` accepts as a value. That turns `LOG_DIR=` into
+// `mkdir ''` and `MCP_PORT=` into a random port. Blank means unset. The exceptions below
+// keep `??` because '' is a real answer there — no aliases, no allowlist, no pinned token.
+const PORT = Number(process.env.MCP_PORT || 41243);
+const HOST = process.env.MCP_HOST || '127.0.0.1';
+const HEARTBEAT_MS = Number(process.env.MCP_HEARTBEAT_MS || 60_000);
+const SILENCE_MS = Number(process.env.MCP_UPSTREAM_SILENCE_MS || 600_000);
+const A2A_URL = process.env.A2A_URL || 'http://localhost:41241/';
 const A2A_AGENTS = process.env.A2A_AGENTS ?? '';
 const ALLOWED_HOSTS = (process.env.MCP_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean);
-const LOG_DIR = process.env.LOG_DIR ?? fileURLToPath(new URL('../../logs/', import.meta.url));
-const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES ?? 5_000_000);
-const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES ?? 5);
+const LOG_DIR = process.env.LOG_DIR || fileURLToPath(new URL('../../logs/', import.meta.url));
+const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES || 5_000_000);
+const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES || 5);
 
 /** `A2A_AGENTS` wins when set; otherwise the single agent at `A2A_URL` needs no alias. */
 const agents = ((): Record<string, string> => {

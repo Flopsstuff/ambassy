@@ -48,16 +48,23 @@ if (!BACKENDS[BACKEND_ID]) {
 }
 const backend: Backend = BACKENDS[BACKEND_ID];
 
-const PORT = Number(process.env.PORT ?? 41241);
+// `||` rather than `??`: a key left blank in .env arrives as '', and `??` would take it
+// as a value — `LOG_DIR=` became `mkdir ''` and killed the server on startup. Blank means
+// unset. `ACP_CWD` keeps `??` because there '' is a real answer: a sandbox per conversation.
+const PORT = Number(process.env.PORT || 41241);
+// Loopback by default, and deliberately so: this agent runs `UserBuilder.noAuthentication`,
+// so a wider bind puts a real coding agent on the network with nothing in front of it.
+// The MCP bridge is the side meant to face the network, and it has a bearer token.
+const HOST = process.env.HOST || '127.0.0.1';
 // The URL the agent advertises in its card. Override it to route clients through the wire-tap.
-const PUBLIC_URL = process.env.PUBLIC_URL ?? `http://localhost:${PORT}/`;
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://${HOST}:${PORT}/`;
 // Empty means a throwaway sandbox per conversation — see acp-client.ts.
 const ACP_CWD = process.env.ACP_CWD ?? '';
 const ACP_ALLOW_EXECUTE = process.env.ACP_ALLOW_EXECUTE === 'true';
-const ACP_IDLE_TIMEOUT_MS = Number(process.env.ACP_IDLE_TIMEOUT_MS ?? 300_000);
-const LOG_DIR = process.env.LOG_DIR ?? fileURLToPath(new URL('../../logs/', import.meta.url));
-const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES ?? 5_000_000);
-const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES ?? 5);
+const ACP_IDLE_TIMEOUT_MS = Number(process.env.ACP_IDLE_TIMEOUT_MS || 300_000);
+const LOG_DIR = process.env.LOG_DIR || fileURLToPath(new URL('../../logs/', import.meta.url));
+const LOG_MAX_BYTES = Number(process.env.LOG_MAX_BYTES || 5_000_000);
+const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES || 5);
 
 const logs = openLogs({ dir: LOG_DIR, maxBytes: LOG_MAX_BYTES, maxFiles: LOG_MAX_FILES });
 
@@ -613,9 +620,9 @@ app.use(jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthenticati
 
 registry.startReaper();
 
-app.listen(PORT, () => {
-  console.log(`${agentCard.name} listening on http://localhost:${PORT}`);
-  console.log(`Agent Card:          http://localhost:${PORT}/${AGENT_CARD_PATH}`);
+app.listen(PORT, HOST, () => {
+  console.log(`${agentCard.name} listening on http://${HOST}:${PORT}`);
+  console.log(`Agent Card:          http://${HOST}:${PORT}/${AGENT_CARD_PATH}`);
   console.log(`Session root:        ${ACP_CWD || 'a fresh sandbox per conversation'}`);
   console.log(`Logs:                ${logs.dir} (calls.jsonl, work.jsonl)`);
 });

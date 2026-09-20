@@ -29,9 +29,12 @@ import {
 } from '@a2a-js/sdk/server';
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 
-const PORT = Number(process.env.PORT ?? 41241);
+const PORT = Number(process.env.PORT || 41241);
+// Loopback by default: the agent runs `UserBuilder.noAuthentication`, so a wider bind
+// hands it to anyone on the network. Set HOST explicitly to open it up.
+const HOST = process.env.HOST || '127.0.0.1';
 // The URL the agent advertises in its card. Override it to route clients through the wire-tap.
-const PUBLIC_URL = process.env.PUBLIC_URL ?? `http://localhost:${PORT}/`;
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://${HOST}:${PORT}/`;
 
 // --- Part/Message helpers: in v1.0 a Part is a discriminated union on `content.$case` ---
 
@@ -255,7 +258,7 @@ app.use((req, _res, next) => {
 app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHandler }));
 app.use(jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
 
-app.listen(PORT, () => {
-  console.log(`Revisor listening on http://localhost:${PORT}`);
-  console.log(`Agent Card:          http://localhost:${PORT}/${AGENT_CARD_PATH}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Revisor listening on http://${HOST}:${PORT}`);
+  console.log(`Agent Card:          http://${HOST}:${PORT}/${AGENT_CARD_PATH}`);
 });

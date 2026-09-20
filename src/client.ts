@@ -9,7 +9,7 @@
 import { Role, TaskState, type Message, type Part, type StreamResponse } from '@a2a-js/sdk';
 import { ClientFactory } from '@a2a-js/sdk/client';
 
-const BASE_URL = process.env.AGENT_URL ?? 'http://localhost:41241';
+const BASE_URL = process.env.AGENT_URL || 'http://localhost:41241';
 
 const userMessage = (text: string, taskId = '', contextId = ''): Message => ({
   messageId: crypto.randomUUID(),
