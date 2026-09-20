@@ -1,6 +1,6 @@
 # Documentation
 
-`rob-a2a` is a sandbox for the **A2A Protocol v1.0** with a working bridge on top of it: the same
+**Ambassy** is a sandbox for the **A2A Protocol v1.0** with a working bridge on top of it: the same
 A2A interface, but answered by a real coding agent over **ACP** instead of by a placeholder.
 
 Three protocols meet here, and the first two are easy to confuse because both are JSON-RPC:

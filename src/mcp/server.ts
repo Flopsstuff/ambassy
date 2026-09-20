@@ -80,7 +80,7 @@ const app = createMcpExpressApp({
 app.use(MCP_PATH, bearerGuard(token));
 
 app.all(MCP_PATH, async (req: Request, res: Response) => {
-  const server = new McpServer({ name: 'rob-a2a-mcp', version: '0.1.0' });
+  const server = new McpServer({ name: 'ambassy-mcp', version: '0.1.0' });
   registerTools(server, { pool, logs, heartbeatMs: HEARTBEAT_MS, silenceLimitMs: SILENCE_MS });
 
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -101,7 +101,7 @@ app.all(MCP_PATH, async (req: Request, res: Response) => {
 const url = `http://${HOST === '0.0.0.0' ? '127.0.0.1' : HOST}:${PORT}${MCP_PATH}`;
 
 app.listen(PORT, HOST, () => {
-  console.log('⚙ rob-a2a MCP bridge');
+  console.log('⚙ Ambassy MCP bridge');
   console.log(`  endpoint: ${url}${HOST === '0.0.0.0' ? '  (bound on 0.0.0.0)' : ''}`);
   for (const [alias, target] of Object.entries(agents)) console.log(`  agent:    ${alias} → ${target}`);
   console.log(`  logs:     ${logs.dir}`);
@@ -110,7 +110,7 @@ app.listen(PORT, HOST, () => {
   console.log(`  ${token}`);
   console.log();
   console.log('  Connect with:');
-  console.log(`  claude mcp add --transport http rob-a2a ${url} --header "Authorization: Bearer ${token}"`);
+  console.log(`  claude mcp add --transport http ambassy ${url} --header "Authorization: Bearer ${token}"`);
   logs.call('mcp.listen', { port: PORT, host: HOST, agents: Object.keys(agents), pinnedToken: Boolean(pinned) });
 });
 

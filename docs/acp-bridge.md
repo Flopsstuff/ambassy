@@ -30,7 +30,7 @@ const stream = acp.ndJsonStream(
   Writable.toWeb(child.stdin),    // writable first — outgoing
   Readable.toWeb(child.stdout),   // readable second
 );
-const conn = acp.client({ name: 'rob-a2a-bridge' })
+const conn = acp.client({ name: 'ambassy-bridge' })
   .onRequest(acp.methods.client.session.requestPermission, …)
   .onRequest(acp.methods.client.fs.readTextFile, …)
   .onRequest(acp.methods.client.fs.writeTextFile, …)

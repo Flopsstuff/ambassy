@@ -68,7 +68,7 @@ export interface RegistryOptions {
   logs: Logs;
 }
 
-const CLIENT_NAME = 'rob-a2a-bridge';
+const CLIENT_NAME = 'ambassy-bridge';
 
 /** What we tell the adapter we can do. Declaring fs routes file access through us. */
 const CLIENT_CAPABILITIES = {

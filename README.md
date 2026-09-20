@@ -1,4 +1,4 @@
-# rob-a2a — an A2A Protocol v1.0 sandbox
+# Ambassy — an A2A Protocol v1.0 sandbox
 
 A minimal agent, a client and a wire-tap, so you can poke the protocol by hand.
 Everything here was verified against live traffic using `@a2a-js/sdk` 1.2.0 (spec v1.0.0).

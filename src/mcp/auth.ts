@@ -65,6 +65,6 @@ export const bearerGuard =
     console.log(`  ⨯ ${req.method} ${req.originalUrl} — ${given === null ? 'no bearer token' : 'bad token'}`);
     res
       .status(401)
-      .set('WWW-Authenticate', 'Bearer realm="rob-a2a-mcp", error="invalid_token"')
+      .set('WWW-Authenticate', 'Bearer realm="ambassy-mcp", error="invalid_token"')
       .json({ error: 'unauthorized' });
   };

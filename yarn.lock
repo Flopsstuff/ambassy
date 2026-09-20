@@ -721,6 +721,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ambassy@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "ambassy@workspace:."
+  dependencies:
+    "@a2a-js/sdk": "npm:^1.2.0"
+    "@agentclientprotocol/claude-agent-acp": "npm:^0.79.0"
+    "@agentclientprotocol/codex-acp": "npm:^1.12.0"
+    "@agentclientprotocol/sdk": "npm:^1.4.0"
+    "@modelcontextprotocol/express": "npm:2.0.0"
+    "@modelcontextprotocol/node": "npm:2.0.0"
+    "@modelcontextprotocol/server": "npm:2.0.0"
+    "@types/express": "npm:^5.0.6"
+    "@types/node": "npm:^26.6.2"
+    express: "npm:^5.2.1"
+    tsx: "npm:^4.23.13"
+    typescript: "npm:^7.0.2"
+    zod: "npm:^4.6.5"
+  languageName: unknown
+  linkType: soft
+
 "async-function@npm:^1.0.0":
   version: 1.0.0
   resolution: "async-function@npm:1.0.0"
@@ -1544,26 +1564,6 @@ __metadata:
   checksum: 10c0/d266678d08e1e7abea62c0ce5864344e980fa81c64f6b481e9842c5beaed2cdcf975f658a3ccd67ad35fc919c1f6664ccc106067801850286a6cbe101de89f29
   languageName: node
   linkType: hard
-
-"rob-a2a@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "rob-a2a@workspace:."
-  dependencies:
-    "@a2a-js/sdk": "npm:^1.2.0"
-    "@agentclientprotocol/claude-agent-acp": "npm:^0.79.0"
-    "@agentclientprotocol/codex-acp": "npm:^1.12.0"
-    "@agentclientprotocol/sdk": "npm:^1.4.0"
-    "@modelcontextprotocol/express": "npm:2.0.0"
-    "@modelcontextprotocol/node": "npm:2.0.0"
-    "@modelcontextprotocol/server": "npm:2.0.0"
-    "@types/express": "npm:^5.0.6"
-    "@types/node": "npm:^26.6.2"
-    express: "npm:^5.2.1"
-    tsx: "npm:^4.23.13"
-    typescript: "npm:^7.0.2"
-    zod: "npm:^4.6.5"
-  languageName: unknown
-  linkType: soft
 
 "router@npm:^2.2.0":
   version: 2.2.0
