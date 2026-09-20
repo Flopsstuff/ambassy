@@ -28,7 +28,9 @@ All three servers listen on the same port and serve the same protocol, so `clien
 `tap` work against any of them without a change. They bind `127.0.0.1` by default: an A2A server
 here runs `UserBuilder.noAuthentication`, so a wider bind hands a coding agent to the network with
 nothing in front of it. `HOST` selects the interface, and `HOST=0.0.0.0` opens one up deliberately.
-The MCP bridge is the side meant to face a network, and it has a bearer token (`MCP_HOST`).
+The tap reads the same variable and binds the same way, because it forwards everything it is given
+to that unauthenticated agent — a second door, not a passive observer; `TARGET_HOST` says where it
+forwards. The MCP bridge is the side meant to face a network, and it has a bearer token (`MCP_HOST`).
 
 To inspect raw traffic (three terminals):
 
@@ -178,6 +180,7 @@ able to take the bridge down.
 | `handshake`, `handshake.failed` | the startup probe: agent name and version, protocol version, auth methods |
 | `adapter.spawn` | pid, backend, cwd, whether the root is ours |
 | `session.new` | session id, cwd, the mode settled on, how long it took |
+| `adapter.failed` | a start that got no further — the stage it died at, the adapter stopped again |
 | `task.start`, `task.input_required` | the A2A side, for correlation |
 | `prompt.start`, `prompt.stop` | duration, `stopReason`, tool counts, refusals, **`usage` and the running `budget`** |
 | `task.cancel`, `task.failed`, `task.finish` | how the task ended, with the budget |
@@ -209,10 +212,22 @@ That classifier is a placeholder for an external channel — a human, a policy, 
 agent — which is why it is one function behind one export.
 
 Its rules: read/search/think pass; edit/delete/move pass only if every path is inside the session
-root; execute/fetch/other pass only when the root is a directory the bridge created itself. The
-answer must be an `optionId` **from the list the agent offered** — inventing one makes Claude fail
-the whole turn with `Permission option was not offered`, and makes Codex silently downgrade it to
-a cancel.
+root; execute/fetch/other pass only when the root is a directory the bridge created itself;
+`switch_mode` passes only through the offered option that keeps supervision, because owning the
+directory says nothing about a call asking for the classifier to be switched off — and because
+both adapters put the destination in the option ids (`exit-plan-default` keeps it, `exit-plan-auto`
+and the `clear-*` variants do not, Codex's `implement_plan` changes no mode at all) while `rawInput`
+carries only the plan. Refusing outright is not the safe answer it looks like: Claude reads a
+refusal there as an interrupt and the turn comes back `CANCELED`. The answer must be an `optionId`
+**from the list the agent offered** — inventing one makes Claude fail the whole turn with `Permission
+option was not offered`, and makes Codex silently downgrade it to a cancel.
+
+**A sandbox is never named after the conversation.** `contextId` is text the A2A caller chose, and
+joining it onto `.acp-sandboxes/` made `..` resolve to the repository root — returned `owned: true`,
+which is the flag that lets a shell run. Directories come from `mkdtemp`, which fails unless the
+directory is new, so an existing directory or a symlink wearing the right name cannot be adopted as
+one the bridge made, and two contexts sharing eight characters cannot merge. The id stays as a
+label on the front of the name, and the registry keeps the context-to-directory map.
 
 The bridge also sets the session mode, rather than leaving it alone, because both defaults route
 the decision somewhere else — and both were caught doing it:
@@ -223,6 +238,10 @@ the decision somewhere else — and both were caught doing it:
   answers instead of the client. Under it Codex overwrote a file two directories above its own
   root without asking. Fixed by selecting `read-only` — a name about approvals, not about writing:
   inside the workspace it still edits freely.
+
+A mode that cannot be established fails the session rather than being noted and passed over, and
+the half-started adapter is stopped with it: an adapter left in its own default answers its own
+permission requests, and the bridge would go on claiming a supervision it is not performing.
 
 ### What this does not protect against
 

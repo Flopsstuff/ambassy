@@ -13,7 +13,7 @@
  */
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   RequestError,
   type PermissionOption,
@@ -42,6 +42,11 @@ export interface Boundary {
 /** Everything a handler needs besides the request itself. */
 export interface Supervision {
   boundary: Boundary;
+  /**
+   * The session mode the bridge settled on, so a request to leave it can be recognised.
+   * Absent where no session exists yet — the startup probe never prompts.
+   */
+  supervisedModeId?: string;
   /** Records a refusal so the turn can tell the A2A client why it ended the way it did. */
   onDeny?: (summary: string) => void;
   log?: (event: string, fields: Fields) => void;
@@ -50,6 +55,12 @@ export interface Supervision {
 interface Verdict {
   allow: boolean;
   reason: string;
+  /**
+   * The one option that carries this verdict, where a yes/no is not enough.
+   * A mode switch is a choice *between* offered destinations, so the classifier has to
+   * name the one it means instead of leaving the pick to `kind` alone.
+   */
+  optionId?: string;
 }
 
 /**
@@ -85,10 +96,68 @@ const realise = (target: string): string => {
  */
 export const insideRoot = (root: string, target: string): boolean => {
   const rel = relative(root, realise(resolve(root, target)));
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  if (rel === '') return true;
+  if (isAbsolute(rel)) return false;
+  // Only a climb out counts. Testing `startsWith('..')` alone also refuses ordinary
+  // children whose names merely begin with two dots — `..notes` is a file, not a parent.
+  return rel !== '..' && !rel.startsWith(`..${sep}`);
 };
 
-const classify = (toolCall: ToolCallUpdate, boundary: Boundary): Verdict => {
+/**
+ * The mode a `switch_mode` call is asking for, where the adapter makes it visible.
+ *
+ * `rawInput` is whatever the agent sent, so this reads it defensively and treats an
+ * unreadable shape as "no target" rather than guessing one.
+ */
+const proposedMode = (toolCall: ToolCallUpdate): string | null => {
+  const raw = toolCall.rawInput;
+  if (typeof raw !== 'object' || raw === null) return null;
+  for (const key of ['modeId', 'mode', 'currentModeId']) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+};
+
+/**
+ * What each known `switch_mode` option does to the session, read off the adapters' own
+ * effect tables rather than guessed from its name. `null` means the option changes no
+ * mode at all, so supervision survives it untouched.
+ *
+ * Both adapters ask this question with the *plan* in `rawInput` and the destination in
+ * the option ids, which is why the list has to be explicit:
+ *
+ * - claude-agent-acp `dist/permissions/effects.js` maps each `exit-plan-*` id to the mode
+ *   it sets. `exit-plan-default` is "Yes, manually approve edits" — leaving planning and
+ *   still asking us about every call. The `clear-*` variants elevate *and* hand the turn
+ *   to a fresh context.
+ * - codex-acp `src/permissions/plan-review.ts` asks "Implement this plan?" and changes no
+ *   mode either way; refusing only sends Codex back to revising the plan.
+ */
+const MODE_BY_OPTION: Record<string, string | null> = {
+  'exit-plan-default': 'default',
+  'exit-plan-accept-edits': 'acceptEdits',
+  'exit-plan-auto': 'auto',
+  'exit-plan-bypass': 'bypassPermissions',
+  'exit-plan-clear-accept-edits': 'acceptEdits',
+  'exit-plan-clear-auto': 'auto',
+  'exit-plan-clear-bypass': 'bypassPermissions',
+  implement_plan: null,
+};
+
+/** The offered option, if any, that leaves the session as supervised as it is now. */
+const supervisedExit = (options: PermissionOption[], supervisedModeId?: string): PermissionOption | undefined =>
+  options.find((o) => {
+    if (!(o.optionId in MODE_BY_OPTION)) return false;
+    const destination = MODE_BY_OPTION[o.optionId];
+    return destination === null || destination === supervisedModeId;
+  });
+
+const classify = (
+  toolCall: ToolCallUpdate,
+  options: PermissionOption[],
+  { boundary, supervisedModeId }: Supervision,
+): Verdict => {
   const kind: ToolKind = toolCall.kind ?? 'other';
   const locations = toolCall.locations ?? [];
 
@@ -114,10 +183,44 @@ const classify = (toolCall: ToolCallUpdate, boundary: Boundary): Verdict => {
         : { allow: false, reason: `${kind} escapes the root: ${escaping.map((l) => l.path).join(', ')}` };
     }
 
+    case 'switch_mode': {
+      // Owning the directory decides nothing here. The mode is what makes the adapter ask
+      // at all, so a switch out of it is a request to stop being supervised — and that is
+      // the bridge's decision, not the agent's.
+      const wanted = proposedMode(toolCall);
+      if (wanted) {
+        return supervisedModeId && wanted === supervisedModeId
+          ? { allow: true, reason: `switch_mode stays in the supervised mode '${wanted}'` }
+          : {
+              allow: false,
+              reason: `switch_mode to '${wanted}' would leave the supervised mode ${supervisedModeId ?? '(unknown)'}`,
+            };
+      }
+      // Neither adapter puts the destination in `rawInput`: it is in the option ids, so
+      // the answer is a choice among them rather than a yes or a no. Refusing outright is
+      // not the safe default it looks like — both adapters read a refusal here as an
+      // instruction to stop, and Claude's ends the ACP turn as a cancellation.
+      const supervised = supervisedExit(options, supervisedModeId);
+      if (supervised) {
+        return {
+          allow: true,
+          optionId: supervised.optionId,
+          reason: `switch_mode: '${supervised.optionId}' keeps the session supervised`,
+        };
+      }
+      const known = options.filter((o) => o.optionId in MODE_BY_OPTION).map((o) => o.optionId);
+      return {
+        allow: false,
+        reason: known.length
+          ? `switch_mode offers only modes that drop supervision: ${known.join(', ')}`
+          : 'switch_mode without a readable target mode cannot be checked',
+      };
+    }
+
     default:
-      // execute, fetch, switch_mode, other — effects we cannot inspect from a tool
-      // call alone. The rule is one sentence long on purpose: a shell runs only in a
-      // directory that belongs to us.
+      // execute, fetch, other — effects we cannot inspect from a tool call alone. The
+      // rule is one sentence long on purpose: a shell runs only in a directory that
+      // belongs to us.
       if (boundary.owned) return { allow: true, reason: `${kind} allowed: the root is our own sandbox` };
       if (boundary.allowExecute) return { allow: true, reason: `${kind} allowed: ACP_ALLOW_EXECUTE is set` };
       return { allow: false, reason: `${kind} is unverifiable and the root was handed to us, not created by us` };
@@ -134,7 +237,15 @@ const classify = (toolCall: ToolCallUpdate, boundary: Boundary): Verdict => {
  * On file edits Codex offers no `decline` at all, and then cancelling is the only refusal
  * there is.
  */
-const pickOption = (options: PermissionOption[], allow: boolean): PermissionOption | undefined => {
+const pickOption = (
+  options: PermissionOption[],
+  allow: boolean,
+  preferred?: string,
+): PermissionOption | undefined => {
+  // A verdict that named its own option has already read the list; take it at its word.
+  const named = preferred === undefined ? undefined : options.find((o) => o.optionId === preferred);
+  if (named) return named;
+
   const wanted: PermissionOptionKind[] = allow
     ? ['allow_once', 'allow_always']
     : ['reject_once', 'reject_always'];
@@ -148,12 +259,13 @@ const pickOption = (options: PermissionOption[], allow: boolean): PermissionOpti
 
 export const decidePermission = (
   params: RequestPermissionRequest,
-  { boundary, onDeny, log }: Supervision,
+  supervision: Supervision,
 ): RequestPermissionResponse => {
-  const verdict = classify(params.toolCall, boundary);
+  const { onDeny, log } = supervision;
+  const verdict = classify(params.toolCall, params.options, supervision);
   const title = params.toolCall.title ?? params.toolCall.toolCallId;
   const kind = params.toolCall.kind ?? 'other';
-  const option = pickOption(params.options, verdict.allow);
+  const option = pickOption(params.options, verdict.allow, verdict.optionId);
   const common = {
     sessionId: params.sessionId,
     toolCallId: params.toolCall.toolCallId,

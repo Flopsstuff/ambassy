@@ -32,6 +32,17 @@ interface Boundary {
 disposable; a directory handed to it through `ACP_CWD` may contain anything, including the
 repository itself.
 
+Which is why the flag is asserted rather than inferred, and why a sandbox is never named after the
+conversation it belongs to. The `contextId` is text an A2A caller chose: with the directory built
+by joining it onto `.acp-sandboxes/`, a context called `..` resolved to the repository root and
+came back marked `owned: true` — the bridge would have handed a shell its own checkout. Sandboxes
+are allocated with `mkdtemp` instead, which fails unless the directory is new, so two conversations
+cannot land in one and neither an existing directory nor a symlink wearing the right name can be
+adopted as one the bridge made. The context id survives as a label on the front of the name, for
+whoever reads a directory listing, and the registry remembers which conversation owns which
+directory. `ACP_CWD` is checked the same way: it has to be a directory, not merely a path that
+exists.
+
 ## The rules
 
 | Tool kind | Decision |
@@ -39,11 +50,35 @@ repository itself.
 | `read`, `search`, `think` | allow — nothing changes |
 | `edit`, `delete`, `move` with locations | allow if every path resolves inside the root |
 | `edit`, `delete`, `move` without locations | allow only if the root is ours — there is nothing to check |
-| `execute`, `fetch`, `switch_mode`, `other` | allow only if the root is ours, or `ACP_ALLOW_EXECUTE=true` |
+| `switch_mode` | allow only the offered option that keeps supervision — owning the directory grants nothing here |
+| `execute`, `fetch`, `other` | allow only if the root is ours, or `ACP_ALLOW_EXECUTE=true` |
 
 One sentence covers the last row: **a shell runs only in a directory that belongs to us.** The
 effects of a command cannot be read off the tool call, so the containment has to come from the
 directory rather than from inspection.
+
+`switch_mode` is the exception to that sentence, and it sits in its own row for a reason. The
+session mode is what makes the adapter ask at all, so a call proposing to leave it is a call
+asking for the classifier to be switched off — owning the directory says nothing about that.
+
+Where the destination is is the part worth knowing. Both adapters ask this question when a plan
+ends, and neither puts the mode in `rawInput` — that carries the plan text. The destination is in
+the *option ids*, so the answer is a choice among them rather than a yes or a no:
+
+| Option | Adapter | Lands in |
+|---|---|---|
+| `exit-plan-default` | Claude | `default` — leaves planning, still asks about every call |
+| `exit-plan-accept-edits`, `exit-plan-auto`, `exit-plan-bypass` | Claude | an elevated mode |
+| `exit-plan-clear-*` | Claude | an elevated mode, and a fresh context |
+| `implement_plan` | Codex | nothing — plan review changes no mode either way |
+
+The table is explicit rather than pattern-matched, because it is read off the adapters' own effect
+tables (`dist/permissions/effects.js`, `src/permissions/plan-review.ts`) and an option whose
+behaviour is unverified is refused.
+
+Refusing outright is not the safe default it looks like: both adapters treat a refusal here as an
+instruction to stop, and Claude's ends the ACP turn — the adapter maps that intentional stop back
+to a cancellation, so a task that merely planned first would die on the way to doing the work.
 
 Path containment resolves symlinks as far as the path exists. Without that the check is wrong
 before it is ever attacked: on macOS `os.tmpdir()` answers `/var/folders/…`, a symlink to
