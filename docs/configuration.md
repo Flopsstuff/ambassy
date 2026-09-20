@@ -10,6 +10,9 @@
 | `yarn client` | SDK client: two-turn conversation with streaming |
 | `yarn raw` | The same protocol over bare curl, no SDK |
 | `yarn tap` | Wire-tap proxy `:41242 → :41241` |
+| `yarn test` | The unit tests, once — see [testing](testing.md) |
+| `yarn test:watch` | The same, re-running as files change |
+| `yarn test:coverage` | The same, with a coverage report |
 
 All three servers listen on the same port and serve the same protocol, so the client, the raw
 script and the tap work against any of them unchanged. They also bind the same interface:
@@ -101,5 +104,7 @@ package is allowlisted. Both are supply-chain defaults worth keeping; see
 [troubleshooting](troubleshooting.md) if an install fails because of them.
 
 There is no build step: `tsx` executes TypeScript directly and the absence of `tsconfig.json` is
-deliberate. There are no tests and no linter either — verification is running `yarn client`
-against a live agent and checking the cycle.
+deliberate, and there is no linter. There are unit tests — `yarn test`, run by Vitest through the
+same esbuild transform — covering the classifier, the two bridges and the event translation; see
+[testing](testing.md) for what they reach and what they deliberately do not. End-to-end
+verification is unchanged: `yarn client` against a live agent, checking the cycle.

@@ -1,7 +1,8 @@
 # The ACP bridge
 
 `src/acp/agent.ts` is the A2A server from `src/agent.ts` with the placeholder executor replaced by
-one that forwards the task to a real coding agent. The backend is chosen by the launch command:
+one that forwards the task to a real coding agent — `AcpExecutor`, in `src/acp/executor.ts`. The
+backend is chosen by the launch command:
 
 ```bash
 yarn agent:claude   # claude-agent-acp, the Claude Agent SDK

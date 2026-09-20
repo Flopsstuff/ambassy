@@ -10,8 +10,8 @@ POST /             ──►     jsonRpcHandler
                              └─ DefaultRequestHandler
                                   ├─ InMemoryTaskStore
                                   └─ AgentExecutor
-                                       RevisorExecutor   (src/agent.ts — no model)
-                                       AcpExecutor       (src/acp/agent.ts)
+                                       RevisorExecutor   (src/revisor.ts — no model)
+                                       AcpExecutor       (src/acp/executor.ts)
                                          │
                                          │  stdin/stdout, newline-delimited JSON-RPC
                                          ▼
