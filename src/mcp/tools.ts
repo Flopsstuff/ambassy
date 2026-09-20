@@ -64,9 +64,15 @@ const failure = (message: string, envelope?: unknown): CallToolResult => ({
 const recovery = (id: AskIdentity): string => {
   const agent = id.agent ? `, "agent": "${id.agent}"` : '';
   if (!id.taskId) {
-    return id.contextId
-      ? `No task id came back. The conversation is "${id.contextId}" — retry there with a2a_ask.`
-      : 'No task id came back, so nothing was accepted on the agent: retry with a2a_ask.';
+    // Having no id is not the same as nothing having happened. The agent creates the task
+    // before it streams the first frame, so a connection that breaks in between leaves work
+    // running that this side never learned the name of — and behind this bridge that work
+    // edits files. Saying "nothing was accepted" here invites the caller to do it twice.
+    const where = id.contextId ? ` The conversation is "${id.contextId}".` : '';
+    return (
+      `No task id came back, so whether the agent accepted this work is unknown.${where} ` +
+      `Retrying may run it a second time — check the agent before repeating anything that writes.`
+    );
   }
   return (
     `The task is still on the agent and unaffected by this call ending. Read it with ` +
@@ -148,7 +154,7 @@ const renderAsk = (result: AskResult): CallToolResult => {
   if (result.outcome === 'truncated') {
     const where = result.taskId
       ? `while the task was ${TaskState[result.state]}`
-      : 'before the agent accepted anything';
+      : 'before it said what it had accepted';
     return failure(
       `The agent's stream ended ${where}, so this turn has no result.\n\n${recovery(result)}` +
         (body ? `\n\nWhat had arrived before it stopped:\n\n${body}` : ''),
