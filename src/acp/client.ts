@@ -18,7 +18,7 @@ import {
   readTextFileInsideRoot,
   writeTextFileInsideRoot,
   type Boundary,
-} from './acp-permissions.ts';
+} from './permissions.ts';
 
 export type BackendId = 'claude' | 'codex';
 
@@ -52,10 +52,10 @@ export const BACKENDS: Record<BackendId, Backend> = {
 
 // Resolved against this file, not the process cwd: the adapters are spawned with the
 // session root as their cwd, so a relative lookup would go hunting in the sandbox.
-const BIN_DIR = fileURLToPath(new URL('node_modules/.bin/', import.meta.url));
+const BIN_DIR = fileURLToPath(new URL('../../node_modules/.bin/', import.meta.url));
 
 /** Where per-conversation sandboxes are made when ACP_CWD is empty. Gitignored. */
-const SANDBOX_DIR = fileURLToPath(new URL('.acp-sandboxes/', import.meta.url));
+const SANDBOX_DIR = fileURLToPath(new URL('../../.acp-sandboxes/', import.meta.url));
 
 export interface RegistryOptions {
   backend: Backend;

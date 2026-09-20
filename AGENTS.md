@@ -63,7 +63,7 @@ expected cycle: `SUBMITTED → INPUT_REQUIRED → WORKING → artifact → COMPL
 
 ## Architecture
 
-The server side (`agent.ts`) is three SDK layers that must not be conflated:
+The server side (`src/agent.ts`) is three SDK layers that must not be conflated:
 
 1. **`AgentExecutor`** (`RevisorExecutor`) — business logic. It returns nothing; it publishes
    events to an `ExecutionEventBus` via `AgentEvent.task()` / `.statusUpdate()` / `.artifactUpdate()`.
@@ -73,20 +73,20 @@ The server side (`agent.ts`) is three SDK layers that must not be conflated:
 
 A single `DefaultRequestHandler` can be mounted on several transports at once (JSON-RPC, REST, gRPC).
 
-The client (`client.ts`) hardcodes neither a method URL nor a protocol:
+The client (`src/client.ts`) hardcodes neither a method URL nor a protocol:
 `ClientFactory.createFromUrl()` downloads the card and picks a transport from `supportedInterfaces`.
 The stream is consumed as an async generator, `client.sendMessageStream(...)`.
 
-`proxy.ts` is a hand-written `node:http` proxy, not part of the SDK. It exists because the SDK
+`src/proxy.ts` is a hand-written `node:http` proxy, not part of the SDK. It exists because the SDK
 surfaces already-parsed objects, and what you need to see is the wire.
 
 ## The ACP bridge
 
-`acp-agent.ts` is the same A2A server with `RevisorExecutor` swapped for one that forwards the
+`src/acp/agent.ts` is the same A2A server with `RevisorExecutor` swapped for one that forwards the
 task to a real coding agent. Downstream it speaks **ACP** — the mirror image of A2A: the agent is
 a child process addressed over stdin/stdout in newline-delimited JSON-RPC, and the bridge plays
-the role an editor plays. Three files: `acp-client.ts` (processes and sessions),
-`acp-permissions.ts` (the permission classifier and the `fs/*` handlers), `acp-agent.ts` (the
+the role an editor plays. Three files: `src/acp/client.ts` (processes and sessions),
+`src/acp/permissions.ts` (the permission classifier and the `fs/*` handlers), `src/acp/agent.ts` (the
 A2A side and the translation). The backend comes from `ACP_AGENT`, set by the launch script;
 everything else comes from `.env` (see `.env.example`).
 
@@ -118,7 +118,7 @@ verbatim buries the wire under hundreds of single-word SSE frames.
 The calling A2A client is **not** a trusted party. An agent that approves the actions of the task
 it itself issued is not a check, and routing the question back as `INPUT_REQUIRED` would turn a
 protocol state into a way for the called agent to talk itself into more rights. So the decision is
-made inside the bridge, by the classifier in `acp-permissions.ts`, and never travels upstream.
+made inside the bridge, by the classifier in `src/acp/permissions.ts`, and never travels upstream.
 That classifier is a placeholder for an external channel — a human, a policy, or a supervising
 agent — which is why it is one function behind one export.
 

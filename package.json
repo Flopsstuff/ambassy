@@ -5,16 +5,16 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "agent": "tsx agent.ts",
-    "agent:claude": "ACP_AGENT=claude tsx acp-agent.ts",
-    "agent:codex": "ACP_AGENT=codex tsx acp-agent.ts",
-    "client": "tsx client.ts",
-    "tap": "tsx proxy.ts",
-    "raw": "./raw.sh"
+    "agent": "tsx src/agent.ts",
+    "agent:claude": "ACP_AGENT=claude tsx src/acp/agent.ts",
+    "agent:codex": "ACP_AGENT=codex tsx src/acp/agent.ts",
+    "client": "tsx src/client.ts",
+    "tap": "tsx src/proxy.ts",
+    "raw": "./src/raw.sh"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "type": "module",
   "dependencies": {
     "@a2a-js/sdk": "^1.2.0",

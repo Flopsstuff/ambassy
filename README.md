@@ -32,15 +32,18 @@ AGENT_URL=http://localhost:41242 yarn client
 
 ## Files
 
+The four A2A programs sit in `src/`; the ACP bridge is grouped under `src/acp/`, since it is a
+second protocol rather than more of the first.
+
 | File | What it demonstrates |
 |---|---|
-| `agent.ts` | A2A server: Agent Card, `AgentExecutor`, streaming status updates, `INPUT_REQUIRED`, artifacts |
-| `client.ts` | Card-based discovery, `sendMessageStream`, resuming a task, `getTask` |
-| `proxy.ts` | Wire-tap: raw JSON-RPC requests and SSE frames |
-| `raw.sh` | The same protocol over curl: discovery → version negotiation → send → stream → get |
-| `acp-agent.ts` | The same A2A server with a real coding agent behind it: ACP updates translated into A2A events |
-| `acp-client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
-| `acp-permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
+| `src/agent.ts` | A2A server: Agent Card, `AgentExecutor`, streaming status updates, `INPUT_REQUIRED`, artifacts |
+| `src/client.ts` | Card-based discovery, `sendMessageStream`, resuming a task, `getTask` |
+| `src/proxy.ts` | Wire-tap: raw JSON-RPC requests and SSE frames |
+| `src/raw.sh` | The same protocol over curl: discovery → version negotiation → send → stream → get |
+| `src/acp/agent.ts` | The same A2A server with a real coding agent behind it: ACP updates translated into A2A events |
+| `src/acp/client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
+| `src/acp/permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
 
 ## What practice revealed
 
@@ -83,3 +86,7 @@ The official samples worth reading first — the SDK's own README points at them
 and `extensions` (protocol extensions).
 
 Specification: https://a2a-protocol.org/v1.0.0/specification/
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).

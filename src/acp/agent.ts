@@ -34,10 +34,10 @@ import {
 } from '@a2a-js/sdk/server';
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import { RequestError, type StopReason } from '@agentclientprotocol/sdk';
-import { AcpRegistry, BACKENDS, type AcpRuntime, type Backend, type BackendId } from './acp-client.ts';
+import { AcpRegistry, BACKENDS, type AcpRuntime, type Backend, type BackendId } from './client.ts';
 
 // Node 23 reads .env by itself; a missing file is not an error, the defaults below suffice.
-const ENV_FILE = fileURLToPath(new URL('.env', import.meta.url));
+const ENV_FILE = fileURLToPath(new URL('../../.env', import.meta.url));
 if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 
 const BACKEND_ID = (process.env.ACP_AGENT ?? '') as BackendId;
