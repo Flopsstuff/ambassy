@@ -440,6 +440,14 @@ On the ACP side, verified the same way:
 - `ClientSideConnection` is deprecated in SDK 1.4.0; the current API is
   `acp.client({name}).onRequest(...).connect(stream)`.
 
+## Changelog
+
+`CHANGELOG.md` at the root, Keep a Changelog format. A change to behaviour, configuration or the
+protocol surface gets an entry in the same commit that makes it — one sentence on what changed,
+and a second on why when the reason is not obvious from the first. Refactors, comments and
+documentation edits do not. While a version is unreleased the entry goes under its heading;
+once it has gone out, open an `## [Unreleased]` above it rather than editing what shipped.
+
 ## Longer prose
 
 `docs/` carries the human-facing documentation: architecture, both protocols, the permission

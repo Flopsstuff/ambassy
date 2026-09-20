@@ -193,6 +193,10 @@ Specifications, one per protocol this repository speaks:
 - ACP — <https://agentclientprotocol.com/protocol/overview>
 - MCP `2025-06-18` — <https://modelcontextprotocol.io/specification/2025-06-18>
 
+## Changes
+
+What changed and why, release by release: [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
