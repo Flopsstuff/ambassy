@@ -84,13 +84,46 @@ Three things in `.yarnrc.yml` and in Yarn's own defaults are deliberate:
   fresh — wait it out or relax the range, rather than turning the gate off.
 
 There is no build step — `tsx` executes TypeScript directly, and the absence of `tsconfig.json`
-is deliberate. There are no tests and no linter either; `yarn test` is the stub left by `npm init`.
-The way to verify things still work is to run `yarn client` against a live agent and check the
-expected cycle: `SUBMITTED → INPUT_REQUIRED → WORKING → artifact → COMPLETED`.
+is deliberate. There is no linter either.
+
+## Tests
+
+```bash
+yarn test            # vitest, one run
+yarn test:watch
+yarn test:coverage
+```
+
+Vitest transforms TypeScript with esbuild — the same engine `tsx` uses — so imports keep their
+`.ts` extensions and nothing is compiled to disk. `tests/` mirrors `src/`; fixtures live in
+`tests/helpers/`. Most of what they assert is a path that is hard to provoke by hand: a cancel
+that arrives before the session exists, a log that rotates mid-record, a stream that stops before
+its task reaches a state, a permission request whose options do not include the one the
+classifier wants.
+
+**Nothing is mocked at the module level.** Every substitution goes through an argument, so the
+seams are visible in the production code: `RuntimeSource` / `TurnRuntime` (the adapter subprocess),
+`A2APoolOptions.createClient` (the SDK's card-driven factory), `RegistryOptions.sandboxDir`,
+`RevisorOptions.stepDelayMs`. Only the clock and the filesystem are faked — the first with
+`vi.useFakeTimers`, the second with real temporary directories, because what is under test there
+*is* path resolution and a mocked `fs` would simply agree with the test.
+
+Not covered, deliberately: the three entry points (importing one reads `.env`, probes an adapter
+and binds a port), `src/client.ts` and `src/proxy.ts`, `AcpRegistry.acquire`/`handshake`/the reaper
+(they spawn a subprocess — a fake ACP adapter is the next thing to add), and `bin/ambassyctl`.
+
+End-to-end verification is unchanged and still worth running: `yarn client` against a live agent,
+checking the cycle `SUBMITTED → INPUT_REQUIRED → WORKING → artifact → COMPLETED`.
+Full write-up: [docs/testing.md](docs/testing.md).
 
 ## Architecture
 
-The server side (`src/agent.ts`) is three SDK layers that must not be conflated:
+Each server is an entry point that reads the environment, builds an Agent Card and binds a port;
+its logic lives beside it, where a test can reach it — `src/revisor.ts` for the stub agent,
+`src/acp/executor.ts` for the bridge, `src/parts.ts` for the `Part`/`Message` helpers both use.
+
+The server side (`src/agent.ts` plus `src/revisor.ts`) is three SDK layers that must not be
+conflated:
 
 1. **`AgentExecutor`** (`RevisorExecutor`) — business logic. It returns nothing; it publishes
    events to an `ExecutionEventBus` via `AgentEvent.task()` / `.statusUpdate()` / `.artifactUpdate()`.
@@ -112,9 +145,11 @@ surfaces already-parsed objects, and what you need to see is the wire.
 `src/acp/agent.ts` is the same A2A server with `RevisorExecutor` swapped for one that forwards the
 task to a real coding agent. Downstream it speaks **ACP** — the mirror image of A2A: the agent is
 a child process addressed over stdin/stdout in newline-delimited JSON-RPC, and the bridge plays
-the role an editor plays. Three files: `src/acp/client.ts` (processes and sessions),
-`src/acp/permissions.ts` (the permission classifier and the `fs/*` handlers), `src/acp/agent.ts` (the
-A2A side and the translation). The backend comes from `ACP_AGENT`, set by the launch script;
+the role an editor plays. Five files: `src/acp/client.ts` (processes and sessions),
+`src/acp/sandbox.ts` (where a conversation may work, and who decided that),
+`src/acp/permissions.ts` (the permission classifier and the `fs/*` handlers),
+`src/acp/executor.ts` (the translation between the two protocols), `src/acp/agent.ts` (the
+bootstrap: environment, handshake, card, port). The backend comes from `ACP_AGENT`, set by the launch script;
 everything else comes from `.env` (see `.env.example`).
 
 **One adapter process per A2A `contextId`.** Conversations are isolated by process, a task

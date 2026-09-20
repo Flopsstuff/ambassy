@@ -29,6 +29,7 @@ behaviour is what is written down, and the disagreement is called out.
 | [configuration.md](configuration.md) | Commands, environment variables, files |
 | [logging.md](logging.md) | The two log channels, their vocabulary, and rotation |
 | [service.md](service.md) | Installing the agent and the bridge as background services |
+| [testing.md](testing.md) | The unit tests: what they reach, what they fake, and what they leave alone |
 | [troubleshooting.md](troubleshooting.md) | Errors you will actually hit, and what they mean |
 | [repository-audit.md](repository-audit.md) | Repository audit, confirmed defects, priorities, and acceptance criteria for fixes |
 
@@ -39,13 +40,17 @@ bin/
   ambassyctl        Installs and drives both processes as services (launchd / systemd)
 service/            The unit templates it renders
 src/
-  agent.ts          A2A server with a placeholder executor (the "Revisor")
+  agent.ts          A2A server with a placeholder executor: environment, card, port
+  revisor.ts        That executor's logic — text statistics and the events it publishes
+  parts.ts          The Part/Message helpers both servers build their events out of
   client.ts         A2A client: discovery, streaming, resuming a task
   proxy.ts          Wire-tap that prints raw JSON-RPC and SSE frames
   raw.sh            The same protocol over bare curl
   acp/
-    agent.ts        A2A server whose executor is a real coding agent
+    agent.ts        The bridge's bootstrap: backend, handshake, card, port
+    executor.ts     The translation: one A2A task becomes one ACP prompt turn
     client.ts       Adapter subprocesses, sessions, idle reaping
+    sandbox.ts      Where a conversation may work, and who created that directory
     permissions.ts  The permission classifier and the fs/* handlers
     log.ts          Two rotating JSON Lines logs
   mcp/
@@ -54,6 +59,7 @@ src/
     tools.ts        The four tools and how their results are shaped
     auth.ts         Token minting and the constant-time guard
     heartbeat.ts    Progress ticks derived from upstream liveness
+tests/              Vitest suites mirroring src/, with fixtures in tests/helpers/
 ```
 
 Start with the Revisor in `src/agent.ts` if you want to see the protocol with nothing else in the

@@ -116,17 +116,21 @@ conversation lives. By default each conversation gets its own directory under `.
 
 | File | What it demonstrates |
 |---|---|
-| `src/agent.ts` | A2A server: Agent Card, `AgentExecutor`, streaming status updates, `INPUT_REQUIRED`, artifacts |
+| `src/agent.ts` | A2A server: Agent Card, transports, port — the bootstrap around the executor |
+| `src/revisor.ts` | The stub executor itself: text statistics, streamed status updates, `INPUT_REQUIRED`, artifacts |
 | `src/client.ts` | Card-based discovery, `sendMessageStream`, resuming a task, `getTask` |
 | `src/proxy.ts` | Wire-tap: raw JSON-RPC requests and SSE frames |
 | `src/raw.sh` | The same protocol over curl: discovery → version negotiation → send → stream → get |
-| `src/acp/agent.ts` | The same A2A server with a real coding agent behind it: ACP updates translated into A2A events |
+| `src/acp/agent.ts` | The same A2A server with a real coding agent behind it: backend, handshake, card |
+| `src/acp/executor.ts` | The translation itself: ACP updates become A2A events, and a `stopReason` becomes a `TaskState` |
 | `src/acp/client.ts` | The ACP side: one adapter subprocess per conversation, sessions, idle reaping |
+| `src/acp/sandbox.ts` | Where a conversation may work, and why `owned` is asserted rather than inferred |
 | `src/acp/permissions.ts` | Who may do what, and the `fs/*` handlers that keep the agent inside its root |
 | `src/acp/log.ts` | Two rotating JSON Lines logs: outward calls with the token budget, and the agent's own work |
 | `src/mcp/server.ts` | The MCP endpoint: bearer guard, one server per request, tools over Streamable HTTP |
 | `src/mcp/a2a.ts` | The pool of A2A clients the tools call, and how a turn is flattened into a result |
 | `bin/ambassyctl` | Installs and drives both processes as services; `service/` holds the unit templates |
+| `tests/` | Vitest suites mirroring `src/`: the classifier, the translation, rotation, the heartbeat |
 
 ## Documentation
 
