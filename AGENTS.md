@@ -214,6 +214,13 @@ answer must be an `optionId` **from the list the agent offered** — inventing o
 the whole turn with `Permission option was not offered`, and makes Codex silently downgrade it to
 a cancel.
 
+**A sandbox is never named after the conversation.** `contextId` is text the A2A caller chose, and
+joining it onto `.acp-sandboxes/` made `..` resolve to the repository root — returned `owned: true`,
+which is the flag that lets a shell run. Directories come from `mkdtemp`, which fails unless the
+directory is new, so an existing directory or a symlink wearing the right name cannot be adopted as
+one the bridge made, and two contexts sharing eight characters cannot merge. The id stays as a
+label on the front of the name, and the registry keeps the context-to-directory map.
+
 The bridge also sets the session mode, rather than leaving it alone, because both defaults route
 the decision somewhere else — and both were caught doing it:
 

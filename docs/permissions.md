@@ -32,6 +32,17 @@ interface Boundary {
 disposable; a directory handed to it through `ACP_CWD` may contain anything, including the
 repository itself.
 
+Which is why the flag is asserted rather than inferred, and why a sandbox is never named after the
+conversation it belongs to. The `contextId` is text an A2A caller chose: with the directory built
+by joining it onto `.acp-sandboxes/`, a context called `..` resolved to the repository root and
+came back marked `owned: true` — the bridge would have handed a shell its own checkout. Sandboxes
+are allocated with `mkdtemp` instead, which fails unless the directory is new, so two conversations
+cannot land in one and neither an existing directory nor a symlink wearing the right name can be
+adopted as one the bridge made. The context id survives as a label on the front of the name, for
+whoever reads a directory listing, and the registry remembers which conversation owns which
+directory. `ACP_CWD` is checked the same way: it has to be a directory, not merely a path that
+exists.
+
 ## The rules
 
 | Tool kind | Decision |

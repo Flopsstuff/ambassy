@@ -50,7 +50,7 @@ Two things about that loader are worth knowing, both verified rather than assume
 | Variable | Default | Effect |
 |---|---|---|
 | `AGENT_NAME` | empty | What the agent answers to: the `name` in the Agent Card, and the `serverInfo` the MCP bridge returns at `initialize`. Empty keeps `Claude (via ACP)` / `Codex (via ACP)`, `Revisor` for the stub and `ambassy-mcp` for the bridge |
-| `ACP_CWD` | empty | Where the agent may work. Empty means a directory per conversation under `.acp-sandboxes/`. Setting it makes the root *not ours*, which tightens the classifier — see [permissions](permissions.md) |
+| `ACP_CWD` | empty | Where the agent may work; must be an existing directory. Empty means a disposable directory per conversation under `.acp-sandboxes/`. Setting it makes the root *not ours*, which tightens the classifier — see [permissions](permissions.md) |
 | `ACP_ALLOW_EXECUTE` | empty | `true` permits shell and network even in a root you supplied |
 | `ACP_IDLE_TIMEOUT_MS` | `300000` | How long a conversation may sit idle before its adapter is stopped. A task in `INPUT_REQUIRED` holds its adapter regardless |
 | `PORT` | `41241` | Port to listen on |
