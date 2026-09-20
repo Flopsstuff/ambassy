@@ -278,6 +278,32 @@ Three decisions worth knowing before changing anything there:
 - **No `skills[]` projection.** The card declares one generic skill, so projecting it would yield
   one generic tool. Client-directed skill selection is being specified for A2A v1.1.
 
+What that blocking design then obliges the bridge to get right, all of it verified against a
+scripted A2A peer rather than reasoned about:
+
+- **`a2a_ask` takes `taskId` as well as `contextId`.** With it, the message continues that task,
+  which is the only way to answer an `INPUT_REQUIRED` question; without it, a new task opens in the
+  same conversation. Replying with the context alone starts a *second* task and leaves the first
+  parked — and a parked task keeps an ACP adapter alive for a question nobody will answer.
+- **Every operation settles.** The silence gate covers `ask` alone, so the rest have deadlines:
+  `MCP_DISCOVERY_TIMEOUT_MS` (20 s) for the card and transport, `MCP_REQUEST_TIMEOUT_MS` (30 s) for
+  `task`, `cancel` and `card`. Discovery is bounded separately **because it is shared** — several
+  callers wait on one cached handshake, so a caller's abort ends only its own wait while the
+  deadline ends the handshake for everyone. Passing the caller's signal down would let one
+  cancelled call break the handshake the others are waiting for.
+- **A turn has an outcome, not just a state**: `task` (terminal), `message` (a direct Message and no
+  task), `interrupted` (`INPUT_REQUIRED` / `AUTH_REQUIRED`), `truncated` (the stream stopped before
+  any of those). `truncated` is an error — otherwise a stream that dies mid-turn returns a tidy
+  result saying the agent "finished in `WORKING`".
+- **Artifacts aggregate by `artifactId`**, honouring `append`, seeded from the task snapshot, every
+  data part kept. Concatenating every update instead turns `old` then `new`, both `append: false`,
+  into `oldnew`, and merges artifacts that were never the same artifact.
+- **Identity travels with the failure.** The first progress notification and every error carry
+  agent, task and context, because interrupting the call does not stop the task. A caller that hung
+  up reads nothing we return, so the handle goes to `calls.jsonl` as `mcp.ask.abandoned`.
+- **The last status message is retained** and reported by both `ask` and `task`: a permission
+  refusal or an authentication error from the ACP bridge arrives there and nowhere else.
+
 Full write-up: [docs/mcp-bridge.md](docs/mcp-bridge.md).
 
 ## Running as a service
