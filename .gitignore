@@ -1,0 +1,78 @@
+# --- Node / Yarn 4 (Berry) ---
+node_modules/
+.npm/
+*.tgz
+.pnpm-store/
+
+# Plug'n'Play здесь не используется (nodeLinker: node-modules), но если кто-то
+# переключит линкер, эти файлы не должны попасть в репозиторий.
+.pnp.*
+
+# Из .yarn/ игнорируем всё, кроме того, что Yarn сам просит коммитить.
+# Кэш вынесен в глобальный (enableGlobalCache), так что .yarn/ здесь почти пуст —
+# остаётся install-state.gz, который как раз не нужен в истории.
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# .yarnrc.yml и yarn.lock КОММИТИМ. Первый держит nodeLinker, без которого
+# tsx не найдёт модули; второй фиксирует версии SDK, а протокольные расхождения
+# между версиями здесь — половина смысла репозитория.
+
+# --- Логи и отладка ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.tap/
+tap-*.txt
+
+# --- Окружение и секреты ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.netrc
+
+# --- Кэши инструментов ---
+.cache/
+.tsbuildinfo
+*.tsbuildinfo
+.tsimp/
+.eslintcache
+coverage/
+.nyc_output/
+
+# --- Сборка (здесь её нет — tsx выполняет TypeScript напрямую, но на будущее) ---
+dist/
+build/
+out/
+
+# --- Локальные артефакты агентов ---
+.claude/settings.local.json
+.worktrees/
+
+# Рабочие каталоги, которые ACP-мост заводит на каждый разговор.
+# Лежат в репозитории, а не в /tmp, сознательно: песочница Codex считает /tmp и $TMPDIR
+# писабельными и не спрашивает разрешения на запись туда.
+.acp-sandboxes/
+
+# --- macOS / редакторы ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json

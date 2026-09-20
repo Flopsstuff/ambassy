@@ -1,0 +1,95 @@
+# Нормализация переводов строк: в репозитории всегда LF.
+* text=auto eol=lf
+
+# Явно текстовые — чтобы diff был читаемым вне зависимости от эвристики Git.
+*.ts        text diff=typescript
+*.js        text diff=javascript
+*.mjs       text diff=javascript
+*.cjs       text diff=javascript
+*.json      text
+*.jsonc     text
+*.md        text diff=markdown
+*.yml       text
+*.yaml      text
+*.html      text diff=html
+*.css       text diff=css
+*.svg       text
+*.sh        text eol=lf
+*.http      text
+
+# Лок-файл коммитим, но в diff и при подсчёте статистики он только шумит.
+yarn.lock          text -diff linguist-generated=true
+
+# Скрипты должны оставаться LF, иначе shebang ломается при checkout на Windows.
+raw.sh      text eol=lf
+
+# --- Git LFS ---
+# Включается само, как только такой файл попадёт в индекс: git lfs install
+# должен быть выполнен один раз на машине, иначе filter просто не сработает.
+# ВАЖНО: правило действует только на файлы, добавленные ПОСЛЕ его коммита.
+# Уже закоммиченный бинарник в LFS не переедет без git lfs migrate.
+
+# Изображения (SVG сознательно оставлен текстом — это разметка)
+*.png       filter=lfs diff=lfs merge=lfs -text
+*.jpg       filter=lfs diff=lfs merge=lfs -text
+*.jpeg      filter=lfs diff=lfs merge=lfs -text
+*.gif       filter=lfs diff=lfs merge=lfs -text
+*.webp      filter=lfs diff=lfs merge=lfs -text
+*.avif      filter=lfs diff=lfs merge=lfs -text
+*.bmp       filter=lfs diff=lfs merge=lfs -text
+*.tif       filter=lfs diff=lfs merge=lfs -text
+*.tiff      filter=lfs diff=lfs merge=lfs -text
+*.ico       filter=lfs diff=lfs merge=lfs -text
+*.psd       filter=lfs diff=lfs merge=lfs -text
+
+# Видео и аудио (например, записи демо-прогонов протокола)
+*.mp4       filter=lfs diff=lfs merge=lfs -text
+*.mov       filter=lfs diff=lfs merge=lfs -text
+*.webm      filter=lfs diff=lfs merge=lfs -text
+*.avi       filter=lfs diff=lfs merge=lfs -text
+*.mkv       filter=lfs diff=lfs merge=lfs -text
+*.gifv      filter=lfs diff=lfs merge=lfs -text
+*.mp3       filter=lfs diff=lfs merge=lfs -text
+*.wav       filter=lfs diff=lfs merge=lfs -text
+*.flac      filter=lfs diff=lfs merge=lfs -text
+*.ogg       filter=lfs diff=lfs merge=lfs -text
+*.m4a       filter=lfs diff=lfs merge=lfs -text
+
+# Документы
+*.pdf       filter=lfs diff=lfs merge=lfs -text
+*.doc       filter=lfs diff=lfs merge=lfs -text
+*.docx      filter=lfs diff=lfs merge=lfs -text
+*.xls       filter=lfs diff=lfs merge=lfs -text
+*.xlsx      filter=lfs diff=lfs merge=lfs -text
+*.ppt       filter=lfs diff=lfs merge=lfs -text
+*.pptx      filter=lfs diff=lfs merge=lfs -text
+
+# Архивы
+*.zip       filter=lfs diff=lfs merge=lfs -text
+*.gz        filter=lfs diff=lfs merge=lfs -text
+*.tgz       filter=lfs diff=lfs merge=lfs -text
+*.bz2       filter=lfs diff=lfs merge=lfs -text
+*.xz        filter=lfs diff=lfs merge=lfs -text
+*.7z        filter=lfs diff=lfs merge=lfs -text
+*.rar       filter=lfs diff=lfs merge=lfs -text
+
+# Шрифты
+*.woff      filter=lfs diff=lfs merge=lfs -text
+*.woff2     filter=lfs diff=lfs merge=lfs -text
+*.ttf       filter=lfs diff=lfs merge=lfs -text
+*.otf       filter=lfs diff=lfs merge=lfs -text
+*.eot       filter=lfs diff=lfs merge=lfs -text
+
+# Бинарники и нативные модули
+*.wasm      filter=lfs diff=lfs merge=lfs -text
+*.node      filter=lfs diff=lfs merge=lfs -text
+*.so        filter=lfs diff=lfs merge=lfs -text
+*.dylib     filter=lfs diff=lfs merge=lfs -text
+*.dll       filter=lfs diff=lfs merge=lfs -text
+*.exe       filter=lfs diff=lfs merge=lfs -text
+*.bin       filter=lfs diff=lfs merge=lfs -text
+
+# Базы данных (InMemoryTaskStore однажды может стать не in-memory)
+*.db        filter=lfs diff=lfs merge=lfs -text
+*.sqlite    filter=lfs diff=lfs merge=lfs -text
+*.sqlite3   filter=lfs diff=lfs merge=lfs -text

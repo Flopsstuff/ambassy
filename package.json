@@ -1,0 +1,34 @@
+{
+  "name": "rob-a2a",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "agent": "tsx agent.ts",
+    "agent:claude": "ACP_AGENT=claude tsx acp-agent.ts",
+    "agent:codex": "ACP_AGENT=codex tsx acp-agent.ts",
+    "client": "tsx client.ts",
+    "tap": "tsx proxy.ts",
+    "raw": "./raw.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@a2a-js/sdk": "^1.2.0",
+    "@agentclientprotocol/claude-agent-acp": "^0.79.0",
+    "@agentclientprotocol/codex-acp": "^1.12.0",
+    "@agentclientprotocol/sdk": "^1.4.0",
+    "express": "^5.2.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "yarn@4.18.0+sha512.fcb8716fe7cd0eece141ffc18b92193a9df9204c1ba83189c288835223fc0bbe64af473bab0d5e9927a7daeb5caf2bb07eb2787cc9338ca040ea125f2a1f2f7e"
+}
