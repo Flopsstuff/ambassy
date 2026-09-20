@@ -24,6 +24,15 @@ import type { Client } from '@a2a-js/sdk/client';
 
 import type { Logs } from '../acp/log.ts';
 
+/**
+ * What a deadline falls back to when the one supplied is not a usable number.
+ *
+ * They live here rather than beside the environment they usually come from, because this
+ * is where they have to be true: the pool is what breaks if a deadline is nonsense.
+ */
+export const DEFAULT_DISCOVERY_TIMEOUT_MS = 20_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface A2APoolOptions {
   /** Agents by alias; the alias is what a tool caller names. */
   agents: Record<string, string>;
@@ -273,14 +282,29 @@ const boundedFetch = (ms: number): typeof fetch => {
   };
 };
 
+/**
+ * A deadline, or the default when what arrived cannot be one.
+ *
+ * These come in as `Number(process.env.…)`, so a typo in `.env` arrives as `NaN`, and
+ * `AbortSignal.timeout(NaN)` throws `RangeError` instead of ignoring it — taking out every
+ * call the deadline was meant to protect. `withDeadline` already declines to fence a
+ * nonsensical limit; this is the same decision made once, for every user of one.
+ */
+const millis = (value: number, fallback: number): number =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+
 export class A2APool {
   private readonly clients = new Map<string, Promise<Client>>();
   private readonly factory: ClientFactory;
+  private readonly discoveryTimeoutMs: number;
+  private readonly requestTimeoutMs: number;
 
   constructor(private readonly opts: A2APoolOptions) {
+    this.discoveryTimeoutMs = millis(opts.discoveryTimeoutMs, DEFAULT_DISCOVERY_TIMEOUT_MS);
+    this.requestTimeoutMs = millis(opts.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
     this.factory = new ClientFactory(
       ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-        cardResolver: new DefaultAgentCardResolver({ fetchImpl: boundedFetch(opts.discoveryTimeoutMs) }),
+        cardResolver: new DefaultAgentCardResolver({ fetchImpl: boundedFetch(this.discoveryTimeoutMs) }),
       }),
     );
   }
@@ -321,11 +345,11 @@ export class A2APool {
       this.factory.createFromUrl(url).catch((err: unknown) => {
         const reason =
           (err as Error)?.name === 'TimeoutError'
-            ? `no agent card within ${this.opts.discoveryTimeoutMs} ms`
+            ? `no agent card within ${this.discoveryTimeoutMs} ms`
             : describe(err);
         throw new Error(`${what} failed: ${reason}`, { cause: err });
       }),
-      this.opts.discoveryTimeoutMs,
+      this.discoveryTimeoutMs,
       what,
     );
     this.clients.set(alias, built);
@@ -361,7 +385,7 @@ export class A2APool {
     signal: AbortSignal | undefined,
     run: (deadline: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    const timeout = AbortSignal.timeout(this.opts.requestTimeoutMs);
+    const timeout = AbortSignal.timeout(this.requestTimeoutMs);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
       return await run(combined);
@@ -369,7 +393,7 @@ export class A2APool {
       // The caller's own abort keeps its reason; only our deadline is reworded, because
       // `TimeoutError: The operation was aborted` names neither the call nor the limit.
       if (timeout.aborted && !signal?.aborted) {
-        throw new Error(`${what} on agent "${alias}" did not answer within ${this.opts.requestTimeoutMs} ms`, {
+        throw new Error(`${what} on agent "${alias}" did not answer within ${this.requestTimeoutMs} ms`, {
           cause: err,
         });
       }
