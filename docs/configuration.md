@@ -12,7 +12,10 @@
 | `yarn tap` | Wire-tap proxy `:41242 → :41241` |
 
 All three servers listen on the same port and serve the same protocol, so the client, the raw
-script and the tap work against any of them unchanged.
+script and the tap work against any of them unchanged. They also bind the same interface:
+`127.0.0.1`, because an A2A server here runs `UserBuilder.noAuthentication` and a wider bind puts
+a coding agent on the network with nothing in front of it. `HOST=0.0.0.0` opens one up when that
+is what you want — the MCP bridge is the side meant to face a network, and it has a token.
 
 To watch the traffic, three terminals:
 
@@ -22,14 +25,27 @@ yarn tap
 AGENT_URL=http://localhost:41242 yarn client
 ```
 
-`PUBLIC_URL` exists for exactly this: the client takes its address from `supportedInterfaces[].url`
-in the Agent Card, so without the substitution it connects directly and bypasses the proxy.
+`PUBLIC_URL` is what the client dials: it takes its address from `supportedInterfaces[].url` in the
+Agent Card rather than from wherever it fetched the card. Hence the substitution above — without it
+the client connects directly and bypasses the proxy. Hence also the rule whenever `HOST` moves:
+the card has to advertise an address the caller can actually reach, so `HOST=0.0.0.0` alone leaves
+the card pointing at `0.0.0.0` and a remote client with nowhere to go.
 
 ## Environment
 
-Copy `.env.example` to `.env`. Only the bridge reads it; `src/agent.ts` needs nothing. Loaded with
-Node's own `process.loadEnvFile`, so there is no `dotenv` dependency, and a missing file is not an
-error.
+Copy `.env.example` to `.env`. The two bridges read it; `src/agent.ts` does not, and takes `PORT`,
+`HOST` and `PUBLIC_URL` from the environment alone. Loaded with Node's own `process.loadEnvFile`,
+so there is no `dotenv` dependency, and a missing file is not an error.
+
+Two things about that loader are worth knowing, both verified rather than assumed:
+
+- **A shell variable wins over the file.** `process.loadEnvFile` does not overwrite a key already
+  present in the environment, so `HOST=0.0.0.0 yarn agent:claude` overrides `.env` for one run.
+- **A blank value means unset.** A key left empty in `.env` arrives as `''`, which is a value and
+  not `undefined` — so these are read with `||`, not `??`, and fall through to the default. Before
+  that, the `LOG_DIR=` line shipped in `.env.example` reached `mkdirSync('')` and killed the server
+  before it listened. Four keys keep `??` because blank is a real answer there: `ACP_CWD`,
+  `A2A_AGENTS`, `MCP_ALLOWED_HOSTS` and `MCP_TOKEN`.
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -37,7 +53,8 @@ error.
 | `ACP_ALLOW_EXECUTE` | empty | `true` permits shell and network even in a root you supplied |
 | `ACP_IDLE_TIMEOUT_MS` | `300000` | How long a conversation may sit idle before its adapter is stopped. A task in `INPUT_REQUIRED` holds its adapter regardless |
 | `PORT` | `41241` | Port to listen on |
-| `PUBLIC_URL` | `http://localhost:$PORT/` | The address advertised in the Agent Card |
+| `HOST` | `127.0.0.1` | Interface to bind. Loopback by default because there is no authentication on the A2A side at all; `0.0.0.0` exposes the agent to the network |
+| `PUBLIC_URL` | `http://$HOST:$PORT/` | The address advertised in the Agent Card. Must name an address callers can reach, so it moves with `HOST` |
 | `LOG_DIR` | `logs/` | Where the two JSON Lines logs go |
 | `LOG_MAX_BYTES` | `5000000` | Rotation threshold per channel |
 | `LOG_MAX_FILES` | `5` | Files kept per channel, the live one included |

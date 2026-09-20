@@ -24,7 +24,10 @@ yarn mcp           # MCP endpoint on :41243 fronting the A2A agent, for a callin
 ```
 
 All three servers listen on the same port and serve the same protocol, so `client`, `raw` and
-`tap` work against any of them without a change.
+`tap` work against any of them without a change. They bind `127.0.0.1` by default: an A2A server
+here runs `UserBuilder.noAuthentication`, so a wider bind hands a coding agent to the network with
+nothing in front of it. `HOST` selects the interface, and `HOST=0.0.0.0` opens one up deliberately.
+The MCP bridge is the side meant to face a network, and it has a bearer token (`MCP_HOST`).
 
 To inspect raw traffic (three terminals):
 
@@ -34,9 +37,18 @@ yarn tap
 AGENT_URL=http://localhost:41242 yarn client
 ```
 
-`PUBLIC_URL` exists solely for that scenario: the client takes its address from
-`supportedInterfaces[].url` in the Agent Card, so without the substitution it connects directly
-and bypasses the proxy.
+`PUBLIC_URL` is what a client dials: it reads `supportedInterfaces[].url` from the Agent Card
+rather than remembering where it fetched the card, so without the substitution above it connects
+directly and bypasses the proxy. The same rule binds `PUBLIC_URL` to `HOST` — it defaults to
+`http://$HOST:$PORT/`, and moving `HOST` without it leaves the card advertising an address the
+caller cannot reach.
+
+Two things about `.env`, both verified rather than assumed: a shell variable wins over the file,
+because `process.loadEnvFile` does not overwrite a key already in the environment; and a blank
+value means unset, because these are read with `||` rather than `??` — `LOG_DIR=`, a line once
+shipped in `.env.example`, otherwise reached `mkdirSync('')` and killed the server before it
+listened. `ACP_CWD`, `A2A_AGENTS`, `MCP_ALLOWED_HOSTS` and `MCP_TOKEN` keep `??`, because there
+blank is a real answer.
 
 ## Package manager
 

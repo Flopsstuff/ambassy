@@ -13,7 +13,7 @@ input and output modes, security schemes, and the transports the agent answers o
 {
   "name": "Revisor",
   "supportedInterfaces": [
-    { "url": "http://localhost:41241/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+    { "url": "http://127.0.0.1:41241/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
   ],
   "capabilities": { "streaming": true, "pushNotifications": false },
   "skills": [ { "id": "text_stats", "inputModes": ["text"], "outputModes": ["text", "data"] } ]
@@ -21,9 +21,10 @@ input and output modes, security schemes, and the transports the agent answers o
 ```
 
 The client hardcodes neither a URL nor a protocol: `ClientFactory.createFromUrl()` fetches the
-card and picks a transport out of `supportedInterfaces`. That is why `PUBLIC_URL` exists — it
-substitutes the address the agent advertises, so a client can be routed through the wire-tap
-instead of connecting directly.
+card and picks a transport out of `supportedInterfaces`. It dials what the card says, not the
+address it fetched the card from, and `PUBLIC_URL` is the knob over that field: it routes a client
+through the wire-tap instead of letting it connect directly, and it is what has to move when
+`HOST` does, or the card advertises an address the caller cannot reach.
 
 ## The task lifecycle
 

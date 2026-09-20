@@ -21,8 +21,9 @@ POST /             ──►     jsonRpcHandler
                                        Claude Agent SDK / codex app-server
 ```
 
-Both servers listen on the same port and serve the same protocol, so `yarn client`, `yarn raw`
-and `yarn tap` work against either without a change. That is the point of the exercise: the
+Both servers listen on the same port and the same interface — `127.0.0.1` unless `HOST` says
+otherwise — and serve the same protocol, so `yarn client`, `yarn raw` and `yarn tap` work against
+either without a change. That is the point of the exercise: the
 client cannot tell from the wire whether the work is done by twenty lines of `String.split` or by
 a coding agent, and it should not have to.
 
