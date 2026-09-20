@@ -61,8 +61,18 @@ const failure = (message: string, envelope?: unknown): CallToolResult => ({
  * Without this the advertised recovery path is unusable: `a2a_task` needs the real task
  * id, and a caller on its first turn does not even know the context it was given.
  */
+/**
+ * The `agent` argument, written into a suggested call whenever there is an alias.
+ *
+ * `A2APool.urlFor` only guesses when exactly one agent is configured; with two, a call
+ * that omits the alias comes back `unknown agent "(omitted)"`. Every suggestion here is
+ * made from a result whose alias the pool already resolved, so there is no reason to leave
+ * the caller to guess it.
+ */
+const agentArg = (id: AskIdentity): string => (id.agent ? `, "agent": "${id.agent}"` : '');
+
 const recovery = (id: AskIdentity): string => {
-  const agent = id.agent ? `, "agent": "${id.agent}"` : '';
+  const agent = agentArg(id);
   if (!id.taskId) {
     // Having no id is not the same as nothing having happened. The agent creates the task
     // before it streams the first frame, so a connection that breaks in between leaves work
@@ -141,8 +151,9 @@ const renderAsk = (result: AskResult): CallToolResult => {
       content: [
         text(
           `${needed}\n\n${result.status || body || '(it did not say what)'}\n\n` +
-            `Answer by calling a2a_ask with taskId "${result.taskId}" and contextId "${result.contextId}" — ` +
-            `the task stays open and keeps its history. Omit taskId only to start new work in the same conversation.`,
+            `Answer it with a2a_ask { "taskId": "${result.taskId}", "contextId": "${result.contextId}"` +
+            `${agentArg(result)}, "text": "…" } — the task stays open and keeps its history. ` +
+            `Omit taskId only to start new work in the same conversation.`,
         ),
         json(envelope),
       ],
@@ -204,7 +215,10 @@ const renderTask = (task: TaskSnapshot): CallToolResult => {
   if (task.status) lines.push(`Agent's last word: ${task.status}`);
   if (body) lines.push(body);
   if (isInterrupted(task.state)) {
-    lines.push(`It is still open — continue it with a2a_ask { "taskId": "${task.taskId}", "contextId": "${task.contextId}", "text": "…" }.`);
+    lines.push(
+      `It is still open — continue it with a2a_ask { "taskId": "${task.taskId}", ` +
+        `"contextId": "${task.contextId}"${agentArg(task)}, "text": "…" }.`,
+    );
   }
   return {
     content: [
