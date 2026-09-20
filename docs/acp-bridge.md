@@ -1,5 +1,9 @@
 # The ACP bridge
 
+Specification: <https://agentclientprotocol.com/protocol/overview>. The SDK is
+`@agentclientprotocol/sdk` 1.4.0, and the protocol version it negotiates is `1` — two different
+numbers that both travel in the same handshake, so it is worth knowing which is which.
+
 `src/acp/agent.ts` is the A2A server from `src/agent.ts` with the placeholder executor replaced by
 one that forwards the task to a real coding agent — `AcpExecutor`, in `src/acp/executor.ts`. The
 backend is chosen by the launch command:

@@ -35,6 +35,22 @@ cancellation routing; it does not establish behavior of the actual model adapter
 The MCP HTTP transport, actual adapter authentication, model execution, and a dependency
 vulnerability scan were not exercised.
 
+## What has been done since
+
+The findings are being answered in the code, not edited out of this document: the record of
+what was found stays as it was written, and each entry carries a **Status** line saying where
+it was answered. As of `109fb67`:
+
+| | Findings |
+|---|---|
+| Closed | F01, F02, F08, F09, F10, F11, F12, F13, F14, F22 |
+| Partly | F18 (the two MCP deadlines), F21 (typecheck and CI, not the smoke exit codes) |
+| Open | F03–F07, F15, F16, F17, F19, F20, F23 |
+
+The open ones are not a leftover pile. F04–F07 are process and task ownership, which the
+implementation order below deliberately groups: they share the adapter registry, and fixing
+one of them alone moves the bug rather than removing it.
+
 Priority meanings: **P0** = isolation boundary bypass; **P1** = fix before routine bridge use;
 **P2** = correctness or reliability work; **P3** = smaller edge case. Evidence is marked
 **reproduced** or **source review**. Source locations refer to the reviewed commit.
@@ -42,6 +58,8 @@ Priority meanings: **P0** = isolation boundary bypass; **P1** = fix before routi
 ## Findings
 
 ### F01 — P0: Client-controlled context IDs become trusted filesystem roots
+
+**Status:** Closed by `3ddd7d4`. Directories come from `mkdtemp` under the sandbox parent, with an explicit context-to-directory map and a containment check on reuse; nothing is derived from the context id but the label on the name.
 
 **Location:** [src/acp/client.ts](../src/acp/client.ts), `boundaryFor`, lines 284–301.
 **Evidence:** reproduced, plus live verification that the A2A SDK accepts `contextId: ".."`.
@@ -64,6 +82,8 @@ command or write a file outside its disposable fixture.
 
 ### F02 — P1: The unauthenticated A2A server binds beyond localhost
 
+**Status:** Closed by `3ddd7d4`. The two A2A servers had already gained `HOST` by the time this was acted on; the wire-tap binds it now as well, and `TARGET_HOST` names what it forwards to.
+
 **Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 609–623;
 [src/agent.ts](../src/agent.ts), lines 248–260;
 [src/proxy.ts](../src/proxy.ts), line 58. **Evidence:** source review.
@@ -83,6 +103,8 @@ Verify the actual bound address, not just the startup message.
 
 ### F03 — P1: Copying the supplied environment template breaks startup
 
+**Status:** Open.
+
 **Location:** [.env.example](../.env.example), lines 20 and 32;
 [src/acp/agent.ts](../src/acp/agent.ts), lines 51–62;
 [src/mcp/server.ts](../src/mcp/server.ts), lines 40–68. **Evidence:** reproduced.
@@ -100,6 +122,8 @@ and a valid public URL. Test this in isolation without overwriting the operator'
 
 ### F04 — P1: Concurrent acquisition creates two adapters for one context
 
+**Status:** Open.
+
 **Location:** [src/acp/client.ts](../src/acp/client.ts), `acquire`, lines 305–364.
 **Evidence:** reproduced with two simultaneous acquisitions and a fake ACP adapter.
 
@@ -116,6 +140,8 @@ in shutdown ownership.
 A failed acquisition can be retried, and shutdown leaves no pending or hidden children.
 
 ### F05 — P1: Failed startup leaks adapter processes; startup has no deadline
+
+**Status:** Open. The one piece taken early: `acquire` disposes a half-started adapter, because F08 cannot be honoured without it.
 
 **Location:** [src/acp/client.ts](../src/acp/client.ts), lines 127–135, 250–281, 314–364.
 **Evidence:** failed acquisition reproduced; missing deadlines found by source review.
@@ -136,6 +162,8 @@ also completes when spawn fails.
 
 ### F06 — P1: Canceling a queued task cancels the task currently running
 
+**Status:** Open.
+
 **Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 143–161, 199–241;
 [src/acp/client.ts](../src/acp/client.ts), lines 193–214. **Evidence:** reproduced with controlled turns.
 
@@ -152,6 +180,8 @@ task is the runtime's active task; settle a canceled queued task without executi
 Also cover cancellation during acquisition and a cancel racing normal completion.
 
 ### F07 — P1: Canceling an INPUT_REQUIRED task hangs
+
+**Status:** Open.
 
 **Location:** [src/agent.ts](../src/agent.ts), lines 114–118, 137–153;
 [src/acp/agent.ts](../src/acp/agent.ts), lines 143–161, 202–218, 257–263.
@@ -175,6 +205,8 @@ executors and cancellation during startup with empty input.
 
 ### F08 — P1: Missing supervised modes silently retain an unsafe default
 
+**Status:** Closed by `3ddd7d4`. A supervised mode that cannot be established fails the session and takes the adapter with it, and `switch_mode` is decided on the option the adapter offered — which is where both adapters put the destination, `rawInput` holding only the plan.
+
 **Location:** [src/acp/client.ts](../src/acp/client.ts), `superviseMode`, lines 367–385.
 **Evidence:** reproduced with an adapter offering only `auto`.
 
@@ -191,6 +223,8 @@ whether the proposed mode preserves supervision.
 Known supported modes continue to work.
 
 ### F09 — P1: MCP cannot resume a task that needs more input
+
+**Status:** Closed by `109fb67`. `taskId` runs through the tool schema, the pool and the outgoing message; the result names the task to reply into, and omitting it still opens new work in the same context.
 
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 71–79, 119–143;
 [src/mcp/tools.ts](../src/mcp/tools.ts), lines 54–60, 99–105. **Evidence:** live reproduction.
@@ -209,6 +243,8 @@ task, and eventually releases its open-task reference. See the specification's
 [task continuation semantics](https://a2a-protocol.org/v1.0.0/specification/#343-multi-turn-conversation-patterns).
 
 ### F10 — P1: The advertised recovery path loses the task handle on errors
+
+**Status:** Closed by `109fb67`. Identity travels with the first progress notification, with a typed `TurnError` and with the silence timeout; a caller that hung up is recorded as `mcp.ask.abandoned`.
 
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), `AskUpdate` and `ask`;
 [src/mcp/tools.ts](../src/mcp/tools.ts), lines 138–145, 155–158. **Evidence:** source review.
@@ -229,6 +265,8 @@ recovery path. A silence timeout includes the known agent, task ID, and context 
 
 ### F11 — P1: Discovery bypasses the MCP abort gate
 
+**Status:** Closed by `109fb67`. `MCP_DISCOVERY_TIMEOUT_MS` bounds the shared handshake and `MCP_REQUEST_TIMEOUT_MS` the three request/response tools; a caller's abort ends only its own wait.
+
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 103–109, 124–125, 184–205;
 [src/mcp/tools.ts](../src/mcp/tools.ts), lines 115–145. **Evidence:** reproduced with stalled HTTP discovery.
 
@@ -245,6 +283,8 @@ and finite deadlines to task retrieval, cancellation, and card retrieval too.
 tool call indefinitely. Verify the same behavior for each of the four tools and shared discovery.
 
 ### F12 — P2: MCP corrupts replacement artifacts and ignores snapshot content
+
+**Status:** Closed by `109fb67`. Artifacts aggregate by `artifactId` honouring `append`, seeded from the task snapshot, with every data part kept.
 
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 150–170.
 **Evidence:** reproduced with an injected SDK stream.
@@ -264,6 +304,8 @@ multiple data parts, and a direct Message response.
 
 ### F13 — P2: An incomplete stream is rendered as a successful tool result
 
+**Status:** Closed by `109fb67`. A turn reports an outcome as well as a state, and `truncated` — a stream that stopped before any ending — is an error carrying the recovery identity.
+
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 146–181;
 [src/mcp/tools.ts](../src/mcp/tools.ts), lines 66–69. **Evidence:** reproduced with an injected stream.
 
@@ -279,6 +321,8 @@ an error carrying recovery identifiers. Make cancellation rendering explicit as 
 remain supported, and interrupted states tell the caller what action is needed.
 
 ### F14 — P2: Final failure reasons and recovery data disappear in MCP results
+
+**Status:** Closed by `109fb67`. The last status message is retained and reported by `a2a_ask` and `a2a_task`, and `a2a_cancel` renders like a read rather than dropping what the task produced.
 
 **Location:** [src/mcp/a2a.ts](../src/mcp/a2a.ts), lines 155–162;
 [src/mcp/tools.ts](../src/mcp/tools.ts), lines 46–83. **Evidence:** source review.
@@ -297,6 +341,8 @@ its text, structured result, and final status explanation.
 
 ### F15 — P2: Agent Cards advertise part labels instead of media types
 
+**Status:** Open.
+
 **Location:** [src/agent.ts](../src/agent.ts), lines 230–240;
 [src/acp/agent.ts](../src/acp/agent.ts), lines 578–588;
 [docs/a2a.md](a2a.md), discovery example. **Evidence:** live card and specification check.
@@ -311,6 +357,8 @@ the example. See the specification's
 **Acceptance:** both cards and documentation agree with the media types of emitted Parts.
 
 ### F16 — P2: MCP and ACP rotate the same logs independently
+
+**Status:** Open.
 
 **Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 58–62;
 [src/mcp/server.ts](../src/mcp/server.ts), lines 47–68;
@@ -329,6 +377,8 @@ accounted for within each service's documented retention window.
 
 ### F17 — P2: Logging can still throw into bridge control flow
 
+**Status:** Open.
+
 **Location:** [src/acp/log.ts](../src/acp/log.ts), lines 50–60 and 89–92.
 **Evidence:** reproduced with an invalid log destination and a non-JSON field.
 
@@ -345,6 +395,8 @@ task outcomes. Preserve a once-only diagnostic.
 without repeated exceptions or accidental task failure.
 
 ### F18 — P2: Environment values are cast instead of validated
+
+**Status:** Partly narrowed by `109fb67`: the two MCP deadlines fall back to their defaults rather than throwing out of `AbortSignal.timeout`, and `ACP_CWD` must now be a directory rather than merely exist. Everything else in this finding stands.
 
 **Location:** [src/acp/agent.ts](../src/acp/agent.ts), lines 44–60;
 [src/acp/client.ts](../src/acp/client.ts), lines 286–291;
@@ -366,6 +418,8 @@ Explicitly test `null`, `[]`, inherited property names, blank values, and non-lo
 
 ### F19 — P2: Every ACP -32000 error is mislabeled as authentication failure
 
+**Status:** Open.
+
 **Location:** [src/acp/agent.ts](../src/acp/agent.ts), `describeError`, lines 118–124;
 [docs/troubleshooting.md](troubleshooting.md), authentication section. **Evidence:** source review.
 
@@ -380,6 +434,8 @@ message, and useful structured details in other cases, with appropriate secret r
 failure reports its actual cause.
 
 ### F20 — P2: The proxy does not manage stream backpressure or disconnects
+
+**Status:** Open.
 
 **Location:** [src/proxy.ts](../src/proxy.ts), lines 22–55. **Evidence:** source review.
 
@@ -397,6 +453,8 @@ timeout policy that permits long SSE responses.
 does not cause unbounded buffering, and an upstream reset settles the downstream response.
 
 ### F21 — P2: Verification does not detect the existing TypeScript and failure-path defects
+
+**Status:** Partly closed. `yarn typecheck` carries the flags this document used, CI runs it on every push and pull request, and the source tree is at zero diagnostics. Still open: the smoke client returns 0 when its first turn does not reach `INPUT_REQUIRED`, and offline regression coverage of the lifecycle defects.
 
 **Location:** [package.json](../package.json), scripts;
 [src/acp/client.ts](../src/acp/client.ts), lines 106–124, 255–269;
@@ -421,6 +479,8 @@ fail before their corresponding fixes. Do not make paid model calls part of rout
 
 ### F22 — P3: Valid filenames starting with two dots are refused
 
+**Status:** Closed by `3ddd7d4`. `insideRoot` refuses `..` and anything beginning `../`, and nothing else.
+
 **Location:** [src/acp/permissions.ts](../src/acp/permissions.ts), lines 86–88.
 **Evidence:** reproduced: `insideRoot(process.cwd(), "..notes")` returned false.
 
@@ -433,6 +493,8 @@ plus absolute relative results; retain canonical path checks.
 and symlink escapes fail.
 
 ### F23 — P3: LOG_MAX_FILES=1 retains an extra file
+
+**Status:** Open.
 
 **Location:** [src/acp/log.ts](../src/acp/log.ts), `rotate`, lines 78–85.
 **Evidence:** reproduced with `maxFiles: 1` and two records forcing rotation.
@@ -488,6 +550,8 @@ symlink check/use races, are not presented here as newly discovered bugs. F01 an
 additional concrete boundary failures despite those limitations.
 
 ## Suggested implementation order
+
+Steps 1 and 3 have landed, minus F03; step 5's typecheck is in CI and the tree is clean.
 
 1. **Restore safe defaults:** F01–F03 and F08. Add boundary and template regression fixtures.
 2. **Fix process/task ownership together:** F04–F07, then turn bookkeeping and shutdown.

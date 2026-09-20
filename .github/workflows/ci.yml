@@ -1,0 +1,35 @@
+# Types and tests, on every push and every pull request.
+#
+# There is no build step here — tsx runs TypeScript directly — so nothing checks types
+# unless something asks. `yarn typecheck` is that ask, and it carries the compiler flags
+# in place of the tsconfig.json this repository deliberately does not have.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # The active LTS. Node 26 takes that title at the end of October 2026; this is
+          # pinned rather than `lts/*` so the jump is a commit somebody made on purpose.
+          node-version: '24'
+
+      # Yarn 4, pinned by the packageManager field; Corepack resolves that version itself.
+      # Deliberately before the install and without setup-node's cache, which reaches for
+      # the Yarn 1 shim on the runner and asks it about a Berry cache folder.
+      - run: corepack enable
+
+      # --immutable: a lockfile that would have to change is a failure, not a fixup.
+      - run: yarn install --immutable
+
+      - run: yarn typecheck
+
+      - run: yarn test

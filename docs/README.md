@@ -5,13 +5,15 @@ A2A interface, but answered by a real coding agent over **ACP** instead of by a 
 
 Three protocols meet here, and the first two are easy to confuse because both are JSON-RPC:
 
-- **A2A** (Agent2Agent) is horizontal — one agent delegates a *task* to another over HTTP. The
-  task is addressable, has a lifecycle, and survives the call that created it.
-- **ACP** (Agent Client Protocol) is what an editor speaks to a coding agent over stdin/stdout.
-  There the roles are reversed: the agent is a child process, and we are the client.
-
-- **MCP** (Model Context Protocol) points the other way: it is how a calling agent reaches tools,
-  and it is what publishes this A2A agent to Claude Code as something callable.
+- **[A2A](https://a2a-protocol.org/v1.0.0/specification/)** (Agent2Agent) is horizontal — one
+  agent delegates a *task* to another over HTTP. The task is addressable, has a lifecycle, and
+  survives the call that created it.
+- **[ACP](https://agentclientprotocol.com/protocol/overview)** (Agent Client Protocol) is what an
+  editor speaks to a coding agent over stdin/stdout. There the roles are reversed: the agent is a
+  child process, and we are the client.
+- **[MCP](https://modelcontextprotocol.io/specification/2025-06-18)** (Model Context Protocol)
+  points the other way: it is how a calling agent reaches tools, and it is what publishes this A2A
+  agent to Claude Code as something callable.
 
 The bridge sits between them. Everything in these pages was checked against running code, not
 inferred from specifications — where behaviour and documentation disagreed, the observed

@@ -6,7 +6,7 @@
  * editor plays. This file owns that side: spawning adapters, opening sessions,
  * keeping one turn in flight at a time, and reaping processes that went quiet.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -78,8 +78,17 @@ const CLIENT_CAPABILITIES = {
   terminal: false,
 };
 
+/**
+ * An adapter as it is actually spawned: two pipes and an inherited stderr.
+ *
+ * Not `ChildProcessWithoutNullStreams`, which promises three — stderr is inherited on
+ * purpose, so the adapter's own diagnostics land in the terminal beside ours rather than
+ * in a buffer nobody reads.
+ */
+type Adapter = ChildProcessByStdio<Writable, Readable, null>;
+
 interface Connected {
-  child: ChildProcessWithoutNullStreams;
+  child: Adapter;
   conn: ClientConnection;
 }
 
@@ -132,7 +141,7 @@ const connect = (backend: Backend, cwd: string, supervise: () => Supervision): C
  * `error` counts as an ending too: a child that never spawned — a missing binary — emits
  * no `exit`, and waiting for one would hang the caller cleaning up after it.
  */
-const stop = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
+const stop = async (child: Adapter): Promise<void> => {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise<void>((done) => {
     child.once('exit', () => done());
@@ -192,7 +201,7 @@ export class Runtime {
   constructor(
     readonly contextId: string,
     readonly boundary: Boundary,
-    private readonly child: ChildProcessWithoutNullStreams,
+    private readonly child: Adapter,
     private readonly conn: ClientConnection,
     readonly session: ActiveSession,
     /** The very object the permission handlers read from — shared, not copied. */
@@ -303,11 +312,13 @@ export class AcpRegistry {
     const { child, conn } = connect(this.opts.backend, process.cwd(), () => ({ boundary }));
     const started = Date.now();
     try {
-      const result = await conn.agent.request(acp.methods.agent.initialize, {
+      // The SDK types `request` by method only for its own method constants; this one
+      // comes back as `unknown`, and the response shape is what the probe exists to read.
+      const result = (await conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: CLIENT_CAPABILITIES,
         clientInfo: { name: CLIENT_NAME, version: '0.1.0' },
-      });
+      })) as InitializeResponse;
       this.opts.logs.call('handshake', {
         backend: this.opts.backend.id,
         bin: this.opts.backend.bin,

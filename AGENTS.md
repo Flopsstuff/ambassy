@@ -22,6 +22,7 @@ yarn raw           # the same protocol over bare curl, no SDK
 yarn tap           # wire-tap proxy :41242 → :41241
 yarn mcp           # MCP endpoint on :41243 fronting the A2A agent, for a calling agent
 yarn service       # install and drive the whole thing as a background service
+yarn typecheck     # tsc --noEmit with the flags that stand in for tsconfig.json
 ```
 
 All three servers listen on the same port and serve the same protocol, so `client`, `raw` and
@@ -115,6 +116,23 @@ and binds a port), `src/client.ts` and `src/proxy.ts`, `AcpRegistry.acquire`/`ha
 End-to-end verification is unchanged and still worth running: `yarn client` against a live agent,
 checking the cycle `SUBMITTED → INPUT_REQUIRED → WORKING → artifact → COMPLETED`.
 Full write-up: [docs/testing.md](docs/testing.md).
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs `yarn typecheck` and `yarn test` on every push and every pull
+request. The typecheck is there because there is no build step: `tsx` transpiles and throws the
+types away, so nothing checks them unless something asks, and the flags that would live in a
+`tsconfig.json` live in that script instead. It is expected to pass — the tree is at zero
+diagnostics — so a new one is a regression rather than a number to compare against.
+
+`.github/workflows/docs.yml` publishes `docs/` to GitHub Pages through the same Jekyll that Pages
+runs anyway, so the site is the Markdown in this repository rather than a second copy of it. It
+needs Pages set to "GitHub Actions" in the repository settings; the workflow cannot turn that on
+by itself.
+
+Corepack is enabled before the install, because that is what resolves the Yarn version pinned in
+`packageManager`. `setup-node`'s cache is deliberately not used: it reaches for the Yarn 1 shim on
+the runner and asks it about a Berry cache folder, which is global here anyway.
 
 ## Architecture
 
@@ -422,6 +440,14 @@ On the ACP side, verified the same way:
 - `ClientSideConnection` is deprecated in SDK 1.4.0; the current API is
   `acp.client({name}).onRequest(...).connect(stream)`.
 
+## Changelog
+
+`CHANGELOG.md` at the root, Keep a Changelog format. A change to behaviour, configuration or the
+protocol surface gets an entry in the same commit that makes it — one sentence on what changed,
+and a second on why when the reason is not obvious from the first. Refactors, comments and
+documentation edits do not. While a version is unreleased the entry goes under its heading;
+once it has gone out, open an `## [Unreleased]` above it rather than editing what shipped.
+
 ## Longer prose
 
 `docs/` carries the human-facing documentation: architecture, both protocols, the permission
@@ -430,7 +456,17 @@ working guide, not the explanation.
 
 ## Source of truth
 
-The specification outranks both the SDK and this file: <https://a2a-protocol.org/v1.0.0/specification/>.
-The SDK implements v1.0.0; when behavior disagrees, check the spec rather than guessing from the
+Three protocols meet here, and each has a specification that outranks both its SDK and this file.
+The versions are the ones this repository actually speaks — read off the handshakes, not off the
+package names:
+
+| Protocol | Specification | What we speak |
+|---|---|---|
+| **A2A** | <https://a2a-protocol.org/v1.0.0/specification/> | v1.0.0, via `@a2a-js/sdk` 1.2.0 |
+| **ACP** | <https://agentclientprotocol.com/protocol/overview> | `PROTOCOL_VERSION` 1, via `@agentclientprotocol/sdk` 1.4.0 |
+| **MCP** | <https://modelcontextprotocol.io/specification/2025-06-18> | `2025-06-18`, the version our `initialize` answers with, via `@modelcontextprotocol/server` 2.0.0 |
+
+For A2A in particular: when behavior disagrees, check the spec rather than guessing from the
 bundle — `dist` also ships the v0.3 compatibility layer, and its constants are easy to mistake for
-the current ones.
+the current ones. The same caution applies to ACP, where the SDK's own version (1.4.0) and the
+protocol's (1) are different numbers that both appear in the handshake.

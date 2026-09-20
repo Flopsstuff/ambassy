@@ -1,5 +1,9 @@
 # The MCP bridge
 
+Specification: <https://modelcontextprotocol.io/specification/2025-06-18> — the version this
+bridge answers `initialize` with. The SDK is `@modelcontextprotocol/server` 2.0.0, over
+Streamable HTTP.
+
 A third protocol joins the two others, and it points the other way. A2A and ACP are both about
 reaching *down* to an agent that does work. MCP is how a calling agent — Claude Code, here —
 reaches *out* to tools. This bridge publishes the A2A agent as four such tools, so calling it

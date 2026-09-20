@@ -1,0 +1,49 @@
+# Publishes docs/ to GitHub Pages.
+#
+# The site is the Markdown already in the repository, rendered by the same Jekyll that
+# Pages runs by itself — no generator, no second copy of the documentation, and nothing
+# to keep in step with it. Requires Pages to be set to "GitHub Actions" in the repository
+# settings; the workflow cannot turn that on for you.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and a queued one waits rather than replacing what is live.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # These three move together: the artifact format they agree on is what ties a build
+      # to the deployment that consumes it, so bumping one alone is how Pages jobs break.
+      - uses: actions/configure-pages@v6
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+      - uses: actions/upload-pages-artifact@v5
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

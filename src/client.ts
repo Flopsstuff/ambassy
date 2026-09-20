@@ -6,7 +6,7 @@
  * Turn 2 — we send the text into THE SAME task → the agent drives it to COMPLETED.
  * That is the difference between A2A and a plain "POST /do": the call has state.
  */
-import { Role, TaskState, type Message, type Part, type StreamResponse } from '@a2a-js/sdk';
+import { Role, TaskState, type Message, type Part, type StreamResponse, type TaskStatus } from '@a2a-js/sdk';
 import { ClientFactory } from '@a2a-js/sdk/client';
 
 const BASE_URL = process.env.AGENT_URL || 'http://localhost:41241';
@@ -33,26 +33,36 @@ const renderParts = (parts: Part[]): string =>
     })
     .join('\n');
 
+// `status` and `artifact` are optional in the generated types, because every message
+// field of a protobuf is. One helper keeps that fact out of the printing below.
+const stateOf = (status: TaskStatus | undefined): TaskState => status?.state ?? TaskState.TASK_STATE_UNSPECIFIED;
+
 /** Prints a stream event and returns whatever task identifiers it carried. */
 function render(event: StreamResponse): { taskId?: string; contextId?: string; state?: TaskState } {
   const p = event.payload;
   switch (p?.$case) {
     case 'task':
-      console.log(`  [task]           id=${p.value.id.slice(0, 8)} state=${TaskState[p.value.status.state]}`);
-      return { taskId: p.value.id, contextId: p.value.contextId, state: p.value.status.state };
+      console.log(`  [task]           id=${p.value.id.slice(0, 8)} state=${TaskState[stateOf(p.value.status)]}`);
+      return { taskId: p.value.id, contextId: p.value.contextId, state: stateOf(p.value.status) };
     case 'statusUpdate': {
-      const note = p.value.status.message ? ` — ${renderParts(p.value.status.message.parts)}` : '';
-      console.log(`  [statusUpdate]   ${TaskState[p.value.status.state]}${note}`);
-      return { taskId: p.value.taskId, contextId: p.value.contextId, state: p.value.status.state };
+      const message = p.value.status?.message;
+      const note = message ? ` — ${renderParts(message.parts)}` : '';
+      console.log(`  [statusUpdate]   ${TaskState[stateOf(p.value.status)]}${note}`);
+      return { taskId: p.value.taskId, contextId: p.value.contextId, state: stateOf(p.value.status) };
     }
-    case 'artifactUpdate':
-      console.log(`  [artifactUpdate] «${p.value.artifact.name}»\n${renderParts(p.value.artifact.parts)}`);
+    case 'artifactUpdate': {
+      const artifact = p.value.artifact;
+      const body = artifact ? `«${artifact.name}»\n${renderParts(artifact.parts)}` : '(an update with no artifact)';
+      console.log(`  [artifactUpdate] ${body}`);
       return { taskId: p.value.taskId, contextId: p.value.contextId };
+    }
     case 'message':
       console.log(`  [message]        ${renderParts(p.value.parts)}`);
       return {};
     default:
-      console.log(`  [${p?.$case ?? 'unknown'}] ${JSON.stringify(p)}`);
+      // The union is exhausted above, so what lands here is either an absent payload or a
+      // case from a newer protocol than these branches know: nothing to name it by.
+      console.log(`  [unrecognised]   ${JSON.stringify(p)}`);
       return {};
   }
 }
@@ -104,7 +114,7 @@ async function main() {
   // The task outlived both calls and sits on the server in full — history and artifacts included.
   const task = await client.getTask({ tenant: '', id: taskId, historyLength: 0 });
   console.log(
-    `\n── Result: GetTask(${taskId.slice(0, 8)}) → ${TaskState[task.status.state]}, ` +
+    `\n── Result: GetTask(${taskId.slice(0, 8)}) → ${TaskState[stateOf(task.status)]}, ` +
       `artifacts: ${task.artifacts?.length ?? 0}, history messages: ${task.history?.length ?? 0} ──`,
   );
 }
