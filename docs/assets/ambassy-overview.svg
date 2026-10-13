@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" font-family="Nunito Sans, DejaVu Sans, sans-serif">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0c0f"/>
+      <stop offset="1" stop-color="#08080a"/>
+    </linearGradient>
+    <radialGradient id="haze" cx="0.5" cy="0.52" r="0.62">
+      <stop offset="0" stop-color="#8a8a9c" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#8a8a9c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="redglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#c0392b" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#c0392b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a7332b"/>
+      <stop offset="1" stop-color="#6e1d18"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#ground)"/>
+  <rect width="1200" height="675" fill="url(#haze)"/>
+
+  <text x="600" y="84" text-anchor="middle" font-size="48" font-weight="600" fill="#d7d7dc" letter-spacing="0.5">Ambassy</text>
+
+  <!-- calling agent: sits low enough that both arrows land on the screen -->
+  <g transform="translate(0 53)">
+    <rect x="66" y="454" width="348" height="22" rx="11" fill="#1a1a20" stroke="#6b6b77" stroke-width="3"/>
+    <rect x="276" y="455" width="64" height="9" rx="4" fill="#0e0e12"/>
+    <rect x="92" y="236" width="296" height="214" rx="12" fill="#16161b" stroke="#6b6b77" stroke-width="4"/>
+    <rect x="106" y="250" width="268" height="186" rx="6" fill="#202027"/>
+    <line x1="240" y1="316" x2="240" y2="299" stroke="#8b8b96" stroke-width="3"/>
+    <circle cx="240" cy="293" r="6" fill="#2e2e36" stroke="#8b8b96" stroke-width="2.5"/>
+    <rect x="196" y="331" width="10" height="18" rx="3" fill="#2e2e36" stroke="#8b8b96" stroke-width="2.5"/>
+    <rect x="274" y="331" width="10" height="18" rx="3" fill="#2e2e36" stroke="#8b8b96" stroke-width="2.5"/>
+    <rect x="205" y="315" width="70" height="56" rx="14" fill="#2e2e36" stroke="#8b8b96" stroke-width="3"/>
+    <circle cx="224" cy="337" r="7" fill="#0b0b0d"/>
+    <circle cx="256" cy="337" r="7" fill="#0b0b0d"/>
+    <rect x="224" y="354" width="32" height="8" rx="4" fill="#0b0b0d"/>
+    <text x="240" y="520" text-anchor="middle" font-size="28" fill="#d7d7dc">Calling agent</text>
+  </g>
+
+  <!-- the bridge -->
+  <g>
+    <rect x="515" y="140" width="170" height="430" rx="6" fill="#101014" stroke="#6b6b77" stroke-width="3.5"/>
+    <rect x="521" y="158" width="158" height="60" fill="#202027"/>
+    <text x="600" y="199" text-anchor="middle" font-size="30" font-weight="600" fill="#d7d7dc">MCP</text>
+    <rect x="521" y="230" width="158" height="60" fill="#202027"/>
+    <text x="600" y="271" text-anchor="middle" font-size="30" font-weight="600" fill="#d7d7dc">A2A</text>
+
+    <rect x="500" y="325" width="200" height="152" fill="url(#redglow)"/>
+    <rect x="521" y="340" width="158" height="122" fill="#1d1013" stroke="#6e2b26" stroke-width="1.5"/>
+    <path d="M600 344 L574 354 V378 C574 398 586 410 600 416 C614 410 626 398 626 378 V354 Z" fill="url(#shield)" stroke="#c04a3e" stroke-width="2"/>
+    <path d="M592 377 V369 A8 8 0 0 1 608 369 V377" fill="none" stroke="#ead7d2" stroke-width="4"/>
+    <rect x="588" y="376" width="24" height="19" rx="3.5" fill="#ead7d2"/>
+    <circle cx="600" cy="385" r="3.2" fill="#6e1d18"/>
+    <text x="600" y="449" text-anchor="middle" font-size="22" fill="#cdbfbc">permissions</text>
+
+    <rect x="521" y="492" width="158" height="60" fill="#202027"/>
+    <text x="600" y="533" text-anchor="middle" font-size="30" font-weight="600" fill="#d7d7dc">ACP</text>
+  </g>
+
+  <!-- coding agent, on its own machine -->
+  <g>
+    <rect x="872" y="228" width="292" height="368" rx="20" fill="none" stroke="#4e4e59" stroke-width="3" stroke-dasharray="16 13"/>
+    <rect x="902" y="272" width="96" height="200" rx="10" fill="#16161b" stroke="#6b6b77" stroke-width="4"/>
+    <rect x="918" y="292" width="64" height="20" rx="4" fill="#2a2a32" stroke="#6b6b77" stroke-width="2"/>
+    <rect x="918" y="322" width="64" height="20" rx="4" fill="#2a2a32" stroke="#6b6b77" stroke-width="2"/>
+    <circle cx="932" cy="440" r="7" fill="#336b52"/>
+
+    <circle cx="1082" cy="306" r="17" fill="none" stroke="#a9a9b3" stroke-width="9"/>
+    <rect x="1077.5" y="320" width="9" height="66" fill="#a9a9b3"/>
+    <rect x="1086" y="350" width="17" height="8" fill="#a9a9b3"/>
+    <rect x="1086" y="370" width="13" height="8" fill="#a9a9b3"/>
+
+    <path d="M1040 414 a8 8 0 0 1 8 -8 h26 l11 12 h47 a8 8 0 0 1 8 8 v40 a8 8 0 0 1 -8 8 h-84 a8 8 0 0 1 -8 -8 z" fill="#22222a" stroke="#a9a9b3" stroke-width="3.5"/>
+    <line x1="1044" y1="426" x2="1136" y2="426" stroke="#a9a9b3" stroke-width="2.5" opacity="0.55"/>
+
+    <text x="1018" y="534" text-anchor="middle" font-size="28" fill="#d7d7dc">Coding agent</text>
+  </g>
+  <text x="1018" y="640" text-anchor="middle" font-size="25" fill="#a9a9b3">its own machine</text>
+
+  <!-- task out, result back: both pass through the bridge -->
+  <g>
+    <rect x="404" y="309.5" width="410" height="11" fill="#a9a9b3"/>
+    <path d="M812 292 L862 315 L812 338 Z" fill="#a9a9b3"/>
+    <text x="459" y="294" text-anchor="middle" font-size="25" fill="#a9a9b3">task</text>
+
+    <line x1="866" y1="477" x2="420" y2="477" stroke="#8b8b96" stroke-width="2.5"/>
+    <path d="M406 477 L432 468 L432 486 Z" fill="#8b8b96"/>
+    <text x="778" y="508" text-anchor="middle" font-size="25" fill="#a9a9b3">result</text>
+  </g>
+</svg>
